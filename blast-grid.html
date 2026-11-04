@@ -1,0 +1,839 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Blast Grid</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+<style>
+  :root{--bg:#0b1020;--panel:#141b2f;--line:#26304d;--text:#e6ebff;--dim:#8a94b8;--accent:#ffb020;--danger:#fb7185;}
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font-family:"Press Start 2P",ui-monospace,monospace;}
+  body{display:flex;align-items:center;justify-content:center;padding:16px;}
+  .hidden{display:none!important}
+  .panel{background:var(--panel);border:3px solid var(--line);border-radius:12px;padding:28px;width:min(560px,100%);box-shadow:0 10px 0 #070a14;}
+  h1{font-size:34px;margin:0 0 6px;color:var(--accent);text-shadow:4px 4px 0 #7c2d12;letter-spacing:2px;text-align:center}
+  .sub{color:var(--dim);font-size:10px;text-align:center;margin-bottom:26px;line-height:1.8}
+  label{font-size:10px;color:var(--dim);display:block;margin:14px 0 8px}
+  input{font:inherit;font-size:14px;width:100%;padding:12px;border-radius:8px;border:3px solid var(--line);background:#0b1020;color:var(--text);outline:none;text-transform:none}
+  input:focus{border-color:var(--accent)}
+  button{font:inherit;font-size:12px;padding:14px 16px;border-radius:8px;border:3px solid #000;background:var(--accent);color:#1a1205;cursor:pointer;box-shadow:0 4px 0 #7c2d12;width:100%;margin-top:12px}
+  button:hover{filter:brightness(1.1)}
+  button:active{transform:translateY(3px);box-shadow:0 1px 0 #7c2d12}
+  button:disabled{opacity:.4;cursor:not-allowed;transform:none}
+  button.alt{background:#38bdf8;box-shadow:0 4px 0 #0c4a6e}
+  button.ghost{background:transparent;color:var(--dim);border-color:var(--line);box-shadow:none}
+  .row{display:flex;gap:10px;align-items:flex-end}
+  .row>*{flex:1}
+  .row button{flex:0 0 auto;width:auto}
+  .sep{border-top:3px dashed var(--line);margin:22px 0 4px}
+  .status{font-size:10px;color:var(--danger);min-height:14px;margin-top:14px;line-height:1.7;text-align:center}
+  .code{font-size:34px;letter-spacing:8px;text-align:center;color:var(--accent);background:#0b1020;border:3px solid var(--line);border-radius:10px;padding:18px 0;margin:10px 0;user-select:all}
+  .plist{list-style:none;padding:0;margin:14px 0}
+  .plist li{display:flex;align-items:center;gap:12px;padding:10px;border:3px solid var(--line);border-radius:8px;margin-bottom:8px;font-size:11px}
+  .dot{width:16px;height:16px;border-radius:4px;border:2px solid #000;flex:0 0 auto}
+  .hint{font-size:9px;color:var(--dim);line-height:1.9;margin-top:10px}
+  #game{display:flex;flex-direction:column;align-items:center;gap:10px;width:100%}
+  #hud{display:flex;gap:8px;align-items:stretch;justify-content:center;flex-wrap:wrap;width:min(100%,calc((100vh - 150px) * 720 / 624))}
+  .card{background:var(--panel);border:3px solid var(--line);border-radius:8px;padding:6px 10px;font-size:9px;display:flex;flex-direction:column;gap:6px;min-width:120px}
+  .card.dead{opacity:.45}
+  .card .nm{display:flex;align-items:center;gap:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:150px}
+  .card .st{color:var(--dim);display:flex;gap:8px}
+  .emo{font-family:"Segoe UI Emoji","Apple Color Emoji","Noto Color Emoji",sans-serif;font-size:11px}
+  .card .wins{color:var(--accent)}
+  .timer{background:var(--panel);border:3px solid var(--line);border-radius:8px;padding:6px 12px;font-size:16px;display:flex;align-items:center}
+  .timer.sd{color:var(--danger)}
+  canvas{width:min(100%,calc((100vh - 150px) * 720 / 624));height:auto;image-rendering:pixelated;border:4px solid #000;border-radius:6px;box-shadow:0 8px 0 #070a14;display:block}
+  #foot{font-size:9px;color:var(--dim);display:flex;gap:16px;align-items:center;flex-wrap:wrap;justify-content:center}
+  #foot button{width:auto;margin:0;padding:8px 10px;font-size:9px}
+</style>
+</head>
+<body>
+
+<!-- MAIN MENU -->
+<div id="menu" class="panel">
+  <h1>BLAST GRID</h1>
+  <div class="sub">Drop bombs. Blow up crates.<br>Be the last one standing.</div>
+  <label for="name">YOUR NAME</label>
+  <input id="name" maxlength="12" placeholder="Player">
+  <button id="btnHost">HOST ONLINE GAME</button>
+  <div class="row">
+    <div><label for="code">ROOM CODE</label><input id="code" maxlength="6" placeholder="ABC12" style="text-transform:uppercase"></div>
+    <button id="btnJoin" class="alt">JOIN</button>
+  </div>
+  <div class="sep"></div>
+  <button id="btnLocal" class="ghost">2 PLAYERS · SAME KEYBOARD</button>
+  <div class="status" id="menuStatus"></div>
+  <div class="hint legend">
+    <b>POWER-UPS</b> (hidden in crates)<br>
+    <i class="emo">💣</i> +1 bomb &nbsp; <i class="emo">🔥</i> bigger blast &nbsp; <i class="emo">⚡</i> speed<br>
+    <i class="emo">👢</i> kick — walk into bombs to slide them<br>
+    <i class="emo">🌀</i> +2 teleports — blink up to 4 tiles ahead, over walls<br>
+    <i class="emo">👻</i> ghost — walk through bombs
+  </div>
+</div>
+
+<!-- LOBBY -->
+<div id="lobby" class="panel hidden">
+  <h1 style="font-size:22px">LOBBY</h1>
+  <div id="hostBox">
+    <label>ROOM CODE — SEND THIS TO YOUR COLLEAGUE</label>
+    <div class="code" id="roomCode">·····</div>
+    <button id="btnCopy" class="ghost" style="margin-top:0">COPY CODE</button>
+  </div>
+  <label>PLAYERS (2–4)</label>
+  <ul class="plist" id="plist"></ul>
+  <button id="btnStart" disabled>START MATCH</button>
+  <button id="btnLeave" class="ghost">LEAVE</button>
+  <div class="status" id="lobbyStatus"></div>
+  <div class="hint">Your colleague opens this same HTML file, types the code and presses JOIN. First to 3 round wins takes the match.</div>
+</div>
+
+<!-- GAME -->
+<div id="game" class="hidden">
+  <div id="hud"></div>
+  <canvas id="cv"></canvas>
+  <div id="foot">
+    <span id="controls"></span>
+    <span>M: SOUND</span>
+    <button id="btnQuit" class="ghost">QUIT</button>
+  </div>
+</div>
+
+<script>
+"use strict";
+// ================== CONSTANTS ==================
+const W = 15, H = 13, T = 48;
+const COLORS = ['#f8fafc', '#38bdf8', '#fb7185', '#a3e635'];
+const DARK   = ['#94a3b8', '#0369a1', '#be123c', '#4d7c0f'];
+const SPAWNS = [[1,1],[13,11],[13,1],[1,11]];
+const ROUND_TIME = 150, FUSE = 2.4, FLAME_T = 0.55, WIN_TARGET = 3, MAX_PLAYERS = 4;
+const ID_PREFIX = 'blastgrid-v1-';
+const idx = (x, y) => y * W + x;
+const $ = s => document.querySelector(s);
+
+// ================== STATE ==================
+let mode = null;            // 'local' | 'host' | 'guest'
+let S = null;               // simulation (host/local only)
+let M = null;               // match info (host/local only)
+let view = null;            // latest snapshot to render
+let mySlot = 0;
+let inputs = [];            // per-slot inputs used by sim
+let localEv = [], netEv = [];
+let peer = null, conns = [], hostConn = null, started = false;
+let myName = 'Player';
+try { myName = localStorage.getItem('bg-name') || 'Player'; } catch (e) {}
+$('#name').value = myName === 'Player' ? '' : myName;
+
+// ================== SIMULATION ==================
+function buildSpiral() {
+  const out = []; let x0 = 1, y0 = 1, x1 = W - 2, y1 = H - 2;
+  while (x0 <= x1 && y0 <= y1) {
+    for (let x = x0; x <= x1; x++) out.push([x, y0]);
+    for (let y = y0 + 1; y <= y1; y++) out.push([x1, y]);
+    if (y1 > y0) for (let x = x1 - 1; x >= x0; x--) out.push([x, y1]);
+    if (x1 > x0) for (let y = y1 - 1; y > y0; y--) out.push([x0, y]);
+    x0++; y0++; x1--; y1--;
+  }
+  return out;
+}
+
+const PU_TABLE = [['b', 28], ['f', 28], ['s', 14], ['k', 11], ['t', 11], ['g', 8]];
+function randPU() { let r = Math.random() * 100; for (const [t, w] of PU_TABLE) if ((r -= w) < 0) return t; return 'b'; }
+
+function newRound() {
+  const grid = [];
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++)
+    grid.push((x === 0 || y === 0 || x === W - 1 || y === H - 1 || (x % 2 === 0 && y % 2 === 0)) ? '#' : '.');
+  const safe = new Set();
+  SPAWNS.forEach(([sx, sy]) => { for (const [dx, dy] of [[0,0],[1,0],[-1,0],[0,1],[0,-1]]) safe.add(idx(sx + dx, sy + dy)); });
+  const hidden = new Map();
+  for (let i = 0; i < grid.length; i++) {
+    if (grid[i] === '.' && !safe.has(i) && Math.random() < 0.75) {
+      grid[i] = '+';
+      if (Math.random() < 0.34) hidden.set(i, randPU());
+    }
+  }
+  S = {
+    grid, hidden, pu: new Map(), bombs: [], flames: new Map(), fx: [],
+    players: M.players.map((pl, i) => ({
+      slot: i, x: SPAWNS[i][0], y: SPAWNS[i][1], alive: pl.connected !== false, dir: 'd', walk: 0,
+      maxBombs: 1, range: 2, speed: 0, kick: false, ghost: false, tele: 0, bombsOut: 0, deathT: 9,
+      lastSeq: (inputs[i] && inputs[i].bombSeq) || 0, lastTele: (inputs[i] && inputs[i].teleSeq) || 0,
+    })),
+    phase: 'count', t: 3, time: ROUND_TIME, spiral: buildSpiral(), sdT: 0, banner: '',
+  };
+}
+
+function ev(e) { localEv.push(e); netEv.push(e); }
+
+function blocked(x, y, p) {
+  if (x < 0 || y < 0 || x >= W || y >= H) return true;
+  if (S.grid[idx(x, y)] !== '.') return true;
+  const b = S.bombs.find(b => b.x === x && b.y === y);
+  return !!(b && !b.pass.has(p.slot) && !p.ghost);
+}
+
+// Can a sliding bomb enter tile (x,y)?
+function bombFree(x, y, self) {
+  if (x < 0 || y < 0 || x >= W || y >= H || S.grid[idx(x, y)] !== '.') return false;
+  if (S.bombs.some(q => q !== self && !q.dead && q.x === x && q.y === y)) return false;
+  return !S.players.some(p => p.alive && Math.abs(p.x - x) < 0.9 && Math.abs(p.y - y) < 0.9);
+}
+
+function tryKick(p, x, y, dx, dy) {
+  const b = S.bombs.find(q => !q.dead && q.x === x && q.y === y);
+  if (!b || b.vx || b.vy || b.pass.has(p.slot)) return;
+  if (!bombFree(x + dx, y + dy, b)) return;
+  b.vx = dx; b.vy = dy; b.prog = 0; ev('kick');
+}
+
+function teleport(p) {
+  if (p.tele <= 0) return;
+  const [dx, dy] = { l: [-1, 0], r: [1, 0], u: [0, -1], d: [0, 1] }[p.dir];
+  const x0 = Math.round(p.x), y0 = Math.round(p.y);
+  for (let r = 4; r >= 1; r--) {
+    const x = x0 + dx * r, y = y0 + dy * r;
+    if (x < 1 || y < 1 || x > W - 2 || y > H - 2) continue;
+    const i = idx(x, y);
+    if (S.grid[i] !== '.' || S.flames.has(i) || S.bombs.some(b => !b.dead && b.x === x && b.y === y)) continue;
+    S.fx.push({ x: x0, y: y0, t: 0.5, c: p.slot }, { x, y, t: 0.5, c: p.slot });
+    p.x = x; p.y = y; p.tele--; ev('tele');
+    return;
+  }
+}
+
+// Move along one axis with corner-assist. Returns distance moved.
+function step(p, dx, dy, dist) {
+  const horiz = dx !== 0, d = horiz ? dx : dy;
+  let a = horiz ? p.x : p.y, b = horiz ? p.y : p.x;
+  const ca = Math.round(a), cb = Math.round(b);
+  const free = (da, db) => !blocked(horiz ? da : db, horiz ? db : da, p);
+  let moved = 0; const off = b - cb;
+  if (Math.abs(off) > 0.001) {
+    const s = Math.sign(off);
+    if (free(ca + d, cb)) { const m = Math.min(Math.abs(off), dist); b -= s * m; dist -= m; moved += m; }
+    else if (Math.abs(off) > 0.2 && free(ca + d, cb + s) && free(ca, cb + s)) {
+      const m = Math.min(1 - Math.abs(off), dist); b += s * m; dist = 0; moved += m;
+    } else dist = 0;
+    if (Math.abs(b - Math.round(b)) < 0.002) b = Math.round(b);
+  }
+  if (dist > 0) {
+    b = cb;
+    let na = a + d * dist;
+    if (p.kick && d * (a - ca) >= -0.05) tryKick(p, horiz ? ca + d : cb, horiz ? cb : ca + d, horiz ? d : 0, horiz ? 0 : d);
+    if (!free(ca + d, cb)) na = d > 0 ? Math.min(na, Math.max(a, ca)) : Math.max(na, Math.min(a, ca));
+    moved += Math.abs(na - a); a = na;
+  }
+  if (horiz) { p.x = a; p.y = b; } else { p.x = b; p.y = a; }
+  return moved;
+}
+
+function movePlayer(p, inp, dt) {
+  let dx = 0, dy = 0;
+  if (inp.left && !inp.right) dx = -1; else if (inp.right && !inp.left) dx = 1;
+  if (inp.up && !inp.down) dy = -1; else if (inp.down && !inp.up) dy = 1;
+  if (!dx && !dy) return;
+  const dist = (3.2 + 0.55 * p.speed) * dt;
+  let moved = 0;
+  if (dx && dy) {
+    const order = inp.pri === 'v' ? [[0, dy], [dx, 0]] : [[dx, 0], [0, dy]];
+    moved = step(p, order[0][0], order[0][1], dist);
+    p.dir = order[0][0] ? (order[0][0] < 0 ? 'l' : 'r') : (order[0][1] < 0 ? 'u' : 'd');
+    if (moved < 1e-4) { moved = step(p, order[1][0], order[1][1], dist); if (moved > 0) p.dir = order[1][0] ? (order[1][0] < 0 ? 'l' : 'r') : (order[1][1] < 0 ? 'u' : 'd'); }
+  } else {
+    moved = step(p, dx, dy, dist);
+    p.dir = dx ? (dx < 0 ? 'l' : 'r') : (dy < 0 ? 'u' : 'd');
+  }
+  p.walk += moved;
+}
+
+function placeBomb(p) {
+  const x = Math.round(p.x), y = Math.round(p.y), i = idx(x, y);
+  if (p.bombsOut >= p.maxBombs || S.grid[i] !== '.' || S.bombs.some(b => b.x === x && b.y === y)) return;
+  const b = { x, y, fuse: FUSE, owner: p.slot, range: p.range, pass: new Set(), dead: false, vx: 0, vy: 0, prog: 0 };
+  S.players.forEach(q => { if (q.alive && Math.abs(q.x - x) < 0.98 && Math.abs(q.y - y) < 0.98) b.pass.add(q.slot); });
+  S.bombs.push(b); p.bombsOut++; ev('place');
+}
+
+function addFlame(x, y, k) {
+  const i = idx(x, y); let f = S.flames.get(i);
+  if (f) { f.t = FLAME_T; if (f.k !== k && f.k !== 'x') f.k = k === 'x' ? 'x' : 'c'; }
+  else { f = { t: FLAME_T, k }; S.flames.set(i, f); }
+  return f;
+}
+
+function explode(b) {
+  if (b.dead) return;
+  b.dead = true;
+  const o = S.players[b.owner]; if (o) o.bombsOut = Math.max(0, o.bombsOut - 1);
+  addFlame(b.x, b.y, 'c'); ev('boom');
+  for (const [dx, dy] of [[1,0],[-1,0],[0,1],[0,-1]]) {
+    for (let r = 1; r <= b.range; r++) {
+      const x = b.x + dx * r, y = b.y + dy * r, i = idx(x, y), c = S.grid[i];
+      if (c === '#') break;
+      if (c === '+') {
+        S.grid[i] = '.';
+        const f = addFlame(x, y, 'x'); const h = S.hidden.get(i);
+        if (h) { f.reveal = h; S.hidden.delete(i); }
+        break;
+      }
+      const ob = S.bombs.find(q => !q.dead && q.x === x && q.y === y);
+      if (ob) { explode(ob); break; }
+      if (S.pu.has(i)) { S.pu.delete(i); addFlame(x, y, dx ? 'h' : 'v'); break; }
+      addFlame(x, y, dx ? 'h' : 'v');
+    }
+  }
+}
+
+function kill(p) { if (!p.alive) return; p.alive = false; p.deathT = 0; ev('die'); }
+
+function endRound() {
+  const alive = S.players.filter(p => p.alive);
+  if (alive.length === 1) {
+    const w = alive[0].slot, pl = M.players[w];
+    pl.wins++; ev('win');
+    if (pl.wins >= M.target) { S.phase = 'match'; S.banner = pl.name + ' WINS THE MATCH!'; return; }
+    S.banner = pl.name + ' wins the round!';
+  } else S.banner = 'DRAW!';
+  S.phase = 'round'; S.t = 3;
+}
+
+function tick(dt) {
+  for (const p of S.players) if (!p.alive) p.deathT += dt;
+  if (S.phase === 'count') {
+    for (const p of S.players) { const q = inputs[p.slot] || {}; p.lastSeq = q.bombSeq || 0; p.lastTele = q.teleSeq || 0; }
+    S.t -= dt; if (S.t <= 0) S.phase = 'play'; return;
+  }
+  if (S.phase === 'round') { S.t -= dt; if (S.t <= 0) newRound(); return; }
+  if (S.phase === 'match') return;
+
+  // sudden death: blocks fall in a spiral
+  S.time -= dt;
+  if (S.time <= 0) {
+    S.sdT -= dt;
+    while (S.sdT <= 0 && S.spiral.length) {
+      const [x, y] = S.spiral.shift(); const i = idx(x, y);
+      if (S.grid[i] === '#') continue;
+      S.sdT += 0.14;
+      S.grid[i] = '#'; S.pu.delete(i); S.flames.delete(i); S.hidden.delete(i);
+      S.bombs.forEach(b => { if (b.x === x && b.y === y && !b.dead) { b.dead = true; const o = S.players[b.owner]; if (o) o.bombsOut--; } });
+      S.players.forEach(p => { if (p.alive && Math.round(p.x) === x && Math.round(p.y) === y) kill(p); });
+      ev('thud');
+    }
+    S.bombs = S.bombs.filter(b => !b.dead);
+  }
+
+  for (const p of S.players) {
+    if (!p.alive) continue;
+    const inp = inputs[p.slot] || {};
+    movePlayer(p, inp, dt);
+    if (inp.bombSeq !== undefined && inp.bombSeq !== p.lastSeq) { p.lastSeq = inp.bombSeq; placeBomb(p); }
+    if (inp.teleSeq !== undefined && inp.teleSeq !== p.lastTele) { p.lastTele = inp.teleSeq; teleport(p); }
+  }
+  for (const b of S.bombs) for (const s of [...b.pass]) {
+    const p = S.players[s];
+    if (!p.alive || Math.abs(p.x - b.x) >= 0.98 || Math.abs(p.y - b.y) >= 0.98) b.pass.delete(s);
+  }
+  for (const b of S.bombs) {
+    if (!b.vx && !b.vy) continue;
+    if (b.prog === 0 && !bombFree(b.x + b.vx, b.y + b.vy, b)) { b.vx = b.vy = 0; continue; }
+    b.prog += 9 * dt;
+    if (b.prog >= 1) {
+      b.x += b.vx; b.y += b.vy; b.prog = 0; b.pass.clear();
+      S.players.forEach(q => { if (q.alive && Math.abs(q.x - b.x) < 0.98 && Math.abs(q.y - b.y) < 0.98) b.pass.add(q.slot); });
+      if (S.flames.has(idx(b.x, b.y))) b.fuse = 0;
+    }
+  }
+  for (const b of S.bombs) { b.fuse -= dt; if (b.fuse <= 0) explode(b); }
+  S.bombs = S.bombs.filter(b => !b.dead);
+  for (const f of S.fx) f.t -= dt;
+  S.fx = S.fx.filter(f => f.t > 0);
+  for (const [i, f] of S.flames) { f.t -= dt; if (f.t <= 0) { S.flames.delete(i); if (f.reveal) S.pu.set(i, f.reveal); } }
+  for (const p of S.players) {
+    if (!p.alive) continue;
+    const i = idx(Math.round(p.x), Math.round(p.y));
+    if (S.flames.has(i)) { kill(p); continue; }
+    const t = S.pu.get(i);
+    if (t) {
+      S.pu.delete(i); ev('pick');
+      if (t === 'b') p.maxBombs = Math.min(8, p.maxBombs + 1);
+      if (t === 'f') p.range = Math.min(8, p.range + 1);
+      if (t === 's') p.speed = Math.min(5, p.speed + 1);
+      if (t === 'k') p.kick = true;
+      if (t === 'g') p.ghost = true;
+      if (t === 't') p.tele = Math.min(5, p.tele + 2);
+    }
+  }
+  const alive = S.players.filter(p => p.alive).length;
+  if (S.phase === 'play' && alive <= 1) { S.phase = 'grace'; S.t = 1.0; }
+  if (S.phase === 'grace') { S.t -= dt; if (S.t <= 0) endRound(); }
+}
+
+function snapshot() {
+  return {
+    t: 's', g: S.grid.join(''), pu: [...S.pu],
+    b: S.bombs.map(b => [+(b.x + b.vx * b.prog).toFixed(3), +(b.y + b.vy * b.prog).toFixed(3), +b.fuse.toFixed(2)]),
+    fx: S.fx.map(f => [f.x, f.y, +f.t.toFixed(2), f.c]),
+    f: [...S.flames].map(([i, f]) => [i, f.k, +f.t.toFixed(2)]),
+    p: S.players.map(p => [+p.x.toFixed(3), +p.y.toFixed(3), p.alive ? 1 : 0, p.dir, +p.walk.toFixed(2), +Math.min(p.deathT, 9).toFixed(2), p.maxBombs, p.range, p.speed, p.kick ? 1 : 0, p.ghost ? 1 : 0, p.tele]),
+    ph: S.phase, ct: +S.t.toFixed(2), tm: +S.time.toFixed(2), ban: S.banner,
+    names: M.players.map(q => q.name), wins: M.players.map(q => q.wins), con: M.players.map(q => q.connected !== false),
+  };
+}
+
+// ================== INPUT ==================
+const KEYMAP = {
+  a: { up: ['KeyW'], down: ['KeyS'], left: ['KeyA'], right: ['KeyD'], bomb: ['Space', 'KeyF'], tele: ['KeyE', 'KeyQ'] },
+  b: { up: ['ArrowUp'], down: ['ArrowDown'], left: ['ArrowLeft'], right: ['ArrowRight'], bomb: ['Enter', 'NumpadEnter', 'Numpad0'], tele: ['ShiftRight', 'ControlRight', 'Numpad1'] },
+};
+const keys = new Set();
+const localIn = [{ bombSeq: 0, teleSeq: 0, pri: 'h' }, { bombSeq: 0, teleSeq: 0, pri: 'h' }];
+let lastSent = '';
+
+function findKey(code) {
+  for (const set of ['a', 'b']) for (const act in KEYMAP[set]) if (KEYMAP[set][act].includes(code)) return { set, act };
+  return null;
+}
+function slotForSet(set) { return mode === 'local' ? (set === 'a' ? 0 : 1) : 0; }
+function dirState(li) {
+  const sets = mode === 'local' ? [li === 0 ? 'a' : 'b'] : ['a', 'b'];
+  const any = act => sets.some(s => KEYMAP[s][act].some(c => keys.has(c)));
+  const st = localIn[li];
+  st.up = any('up'); st.down = any('down'); st.left = any('left'); st.right = any('right');
+  return st;
+}
+function sendGuestInput() {
+  if (mode !== 'guest' || !hostConn || !hostConn.open) return;
+  const st = dirState(0);
+  const k = { up: st.up, down: st.down, left: st.left, right: st.right, pri: st.pri, bombSeq: st.bombSeq, teleSeq: st.teleSeq };
+  const s = JSON.stringify(k);
+  if (s !== lastSent) { lastSent = s; hostConn.send({ t: 'in', k }); }
+}
+
+let muted = false;
+addEventListener('keydown', e => {
+  unlockAudio();
+  if (e.target.tagName === 'INPUT') { if (e.code === 'Enter') { if (e.target.id === 'code') $('#btnJoin').click(); } return; }
+  if (!started) return;
+  if (e.code === 'KeyM' && !e.repeat) { muted = !muted; return; }
+  if (e.code === 'KeyR' && !e.repeat && view && view.ph === 'match' && mode !== 'guest') { startMatch(); return; }
+  const k = findKey(e.code); if (!k) return;
+  e.preventDefault();
+  keys.add(e.code);
+  const li = slotForSet(k.set);
+  if (k.act === 'bomb' && !e.repeat) localIn[li].bombSeq++;
+  if (k.act === 'tele' && !e.repeat) localIn[li].teleSeq++;
+  if (k.act === 'up' || k.act === 'down') localIn[li].pri = 'v';
+  if (k.act === 'left' || k.act === 'right') localIn[li].pri = 'h';
+  sendGuestInput();
+});
+addEventListener('keyup', e => { keys.delete(e.code); sendGuestInput(); });
+addEventListener('blur', () => { keys.clear(); sendGuestInput(); });
+
+function readLocalInputs() {
+  if (mode === 'local') { inputs[0] = dirState(0); inputs[1] = dirState(1); }
+  else if (mode === 'host') inputs[0] = dirState(0);
+}
+
+// ================== AUDIO ==================
+let AC = null;
+function unlockAudio() {
+  if (!AC) { try { AC = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) { } }
+  if (AC && AC.state === 'suspended') AC.resume();
+}
+function tone(type, f0, f1, dur, vol, delay = 0) {
+  const t = AC.currentTime + delay, o = AC.createOscillator(), g = AC.createGain();
+  o.type = type; o.frequency.setValueAtTime(f0, t); o.frequency.exponentialRampToValueAtTime(Math.max(1, f1), t + dur);
+  g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  o.connect(g).connect(AC.destination); o.start(t); o.stop(t + dur + 0.02);
+}
+let noiseBuf = null;
+function sfx(name) {
+  if (muted || !AC || AC.state !== 'running') return;
+  if (name === 'boom') {
+    if (!noiseBuf) { noiseBuf = AC.createBuffer(1, AC.sampleRate * 0.6, AC.sampleRate); const d = noiseBuf.getChannelData(0); for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1; }
+    const t = AC.currentTime, s = AC.createBufferSource(), f = AC.createBiquadFilter(), g = AC.createGain();
+    s.buffer = noiseBuf; f.type = 'lowpass'; f.frequency.setValueAtTime(1200, t); f.frequency.exponentialRampToValueAtTime(80, t + 0.55);
+    g.gain.setValueAtTime(0.55, t); g.gain.exponentialRampToValueAtTime(0.001, t + 0.55);
+    s.connect(f).connect(g).connect(AC.destination); s.start(t);
+    tone('sine', 120, 40, 0.35, 0.4);
+  } else if (name === 'place') tone('square', 260, 130, 0.08, 0.06);
+  else if (name === 'pick') { tone('triangle', 523, 523, 0.08, 0.15); tone('triangle', 659, 659, 0.08, 0.15, 0.07); tone('triangle', 988, 988, 0.12, 0.15, 0.14); }
+  else if (name === 'die') tone('sawtooth', 500, 50, 0.7, 0.12);
+  else if (name === 'win') [523, 659, 784, 1047].forEach((f, i) => tone('square', f, f, 0.14, 0.07, i * 0.12));
+  else if (name === 'kick') tone('square', 180, 70, 0.12, 0.12);
+  else if (name === 'tele') { tone('sine', 300, 1400, 0.22, 0.15); tone('triangle', 1400, 300, 0.2, 0.08, 0.12); }
+  else if (name === 'thud') tone('sine', 110, 50, 0.15, 0.25);
+}
+function playEvents(list) { new Set(list).forEach(sfx); }
+
+// ================== RENDERING ==================
+const cv = $('#cv'), ctx = cv.getContext('2d');
+cv.width = W * T; cv.height = H * T;
+let clock = 0;
+const disp = [];
+
+function drawWall(px, py, border) {
+  ctx.fillStyle = border ? '#3b4664' : '#55627f'; ctx.fillRect(px, py, T, T);
+  ctx.fillStyle = border ? '#4a5678' : '#7a89a8'; ctx.fillRect(px, py, T, 6); ctx.fillRect(px, py, 6, T);
+  ctx.fillStyle = border ? '#262e45' : '#36405a'; ctx.fillRect(px, py + T - 6, T, 6); ctx.fillRect(px + T - 6, py, 6, T);
+  if (!border) { ctx.fillStyle = '#6a7898'; ctx.fillRect(px + 14, py + 14, T - 28, T - 28); }
+}
+function drawCrate(px, py, alpha = 1) {
+  ctx.globalAlpha = alpha;
+  ctx.fillStyle = '#c47a3a'; ctx.fillRect(px + 2, py + 2, T - 4, T - 4);
+  ctx.fillStyle = '#e09a55'; ctx.fillRect(px + 2, py + 2, T - 4, 4);
+  ctx.fillStyle = '#8a4f22';
+  ctx.fillRect(px + 2, py + 15, T - 4, 3); ctx.fillRect(px + 2, py + 30, T - 4, 3);
+  ctx.fillRect(px + 2, py + T - 6, T - 4, 4);
+  ctx.fillRect(px + 14, py + 6, 3, 9); ctx.fillRect(px + 30, py + 18, 3, 12); ctx.fillRect(px + 20, py + 33, 3, 9);
+  ctx.globalAlpha = 1;
+}
+function drawFloor(px, py, x, y, shadowAbove) {
+  ctx.fillStyle = (x + y) % 2 ? '#24324a' : '#283851'; ctx.fillRect(px, py, T, T);
+  if (shadowAbove) { ctx.fillStyle = 'rgba(0,0,0,.28)'; ctx.fillRect(px, py, T, 8); }
+}
+function drawPU(i, type) {
+  const x = i % W, y = (i / W) | 0, px = x * T, py = y * T, cx = px + T / 2, cy = py + T / 2;
+  const glow = 0.5 + 0.5 * Math.sin(clock * 6);
+  ctx.fillStyle = { b: '#334155', f: '#7c2d12', s: '#1e3a8a', k: '#3f2a1d', t: '#4c1d95', g: '#134e4a' }[type];
+  ctx.strokeStyle = `rgba(250,204,21,${0.5 + glow * 0.5})`; ctx.lineWidth = 3;
+  ctx.beginPath(); ctx.roundRect(px + 6, py + 6, T - 12, T - 12, 7); ctx.fill(); ctx.stroke();
+  if (type === 'b') {
+    ctx.fillStyle = '#0b0b0b'; ctx.beginPath(); ctx.arc(cx - 1, cy + 2, 10, 0, 7); ctx.fill();
+    ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(cx - 5, cy - 2, 2.5, 0, 7); ctx.fill();
+    ctx.strokeStyle = '#facc15'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(cx + 5, cy - 6); ctx.lineTo(cx + 9, cy - 11); ctx.stroke();
+  } else if (type === 'f') {
+    ctx.fillStyle = '#ff7a1a'; ctx.beginPath(); ctx.moveTo(cx, cy - 13); ctx.quadraticCurveTo(cx + 13, cy, cx + 8, cy + 10); ctx.lineTo(cx - 8, cy + 10); ctx.quadraticCurveTo(cx - 13, cy, cx, cy - 13); ctx.fill();
+    ctx.fillStyle = '#ffe08a'; ctx.beginPath(); ctx.moveTo(cx, cy - 3); ctx.quadraticCurveTo(cx + 6, cy + 4, cx + 3, cy + 10); ctx.lineTo(cx - 3, cy + 10); ctx.quadraticCurveTo(cx - 6, cy + 4, cx, cy - 3); ctx.fill();
+  } else if (type === 'k') {
+    ctx.fillStyle = '#d97706'; ctx.strokeStyle = '#000'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(cx - 8, cy - 12); ctx.lineTo(cx + 1, cy - 12); ctx.lineTo(cx + 1, cy + 1); ctx.lineTo(cx + 12, cy + 3);
+    ctx.quadraticCurveTo(cx + 14, cy + 11, cx + 8, cy + 11); ctx.lineTo(cx - 8, cy + 11); ctx.closePath(); ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#fde68a'; ctx.fillRect(cx - 8, cy + 6, 20, 3);
+  } else if (type === 't') {
+    for (let r = 13; r > 2; r -= 4) { ctx.strokeStyle = r % 8 === 5 ? '#e879f9' : '#a78bfa'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(cx, cy, r, clock * 5 + r, clock * 5 + r + 4.4); ctx.stroke(); }
+  } else if (type === 'g') {
+    ctx.fillStyle = '#f0fdfa'; ctx.beginPath(); ctx.arc(cx, cy - 2, 10, Math.PI, 0); ctx.lineTo(cx + 10, cy + 11);
+    for (let k = 0; k < 4; k++) ctx.lineTo(cx + 10 - (k + 0.5) * 5, cy + (k % 2 ? 11 : 7));
+    ctx.lineTo(cx - 10, cy + 11); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = '#134e4a'; ctx.fillRect(cx - 5, cy - 4, 3, 5); ctx.fillRect(cx + 2, cy - 4, 3, 5);
+  } else {
+    ctx.fillStyle = '#facc15'; ctx.beginPath();
+    ctx.moveTo(cx + 3, cy - 13); ctx.lineTo(cx - 8, cy + 2); ctx.lineTo(cx - 1, cy + 2); ctx.lineTo(cx - 4, cy + 13); ctx.lineTo(cx + 8, cy - 3); ctx.lineTo(cx + 1, cy - 3); ctx.closePath(); ctx.fill();
+  }
+}
+function drawFlame(i, k, t) {
+  const x = i % W, y = (i / W) | 0, px = x * T, py = y * T, cx = px + T / 2, cy = py + T / 2;
+  const life = t / FLAME_T, s = Math.min(1, life * 2.2) * (0.85 + 0.15 * Math.sin(clock * 40 + i));
+  if (k === 'x') {
+    drawCrate(px, py, life);
+    const layers = [['#ff5a1f', 20], ['#ffb020', 14], ['#fff3c4', 7]];
+    for (const [c, r] of layers) { ctx.fillStyle = c; ctx.beginPath(); ctx.arc(cx, cy, r * s, 0, 7); ctx.fill(); }
+    return;
+  }
+  const layers = [['#ff5a1f', 0.86], ['#ffb020', 0.6], ['#fff3c4', 0.3]];
+  for (const [c, f] of layers) {
+    const l = T * f * s; ctx.fillStyle = c;
+    if (k === 'h' || k === 'c') ctx.fillRect(px, cy - l / 2, T, l);
+    if (k === 'v' || k === 'c') ctx.fillRect(cx - l / 2, py, l, T);
+    if (k === 'c') { ctx.beginPath(); ctx.arc(cx, cy, l * 0.62, 0, 7); ctx.fill(); }
+  }
+}
+function drawBomb(x, y, fuse) {
+  const cx = x * T + T / 2, cy = y * T + T / 2, el = FUSE - fuse;
+  const pulse = 1 + 0.09 * Math.sin(el * (8 + el * 7));
+  const r = 15 * pulse;
+  ctx.fillStyle = 'rgba(0,0,0,.35)'; ctx.beginPath(); ctx.ellipse(cx, cy + 16, 14, 4, 0, 0, 7); ctx.fill();
+  const g = ctx.createRadialGradient(cx - 5, cy - 3, 2, cx, cy + 2, r);
+  g.addColorStop(0, fuse < 0.6 && Math.sin(clock * 40) > 0 ? '#7f1d1d' : '#4b5563'); g.addColorStop(1, '#0b0b0b');
+  ctx.fillStyle = g; ctx.beginPath(); ctx.arc(cx, cy + 2, r, 0, 7); ctx.fill();
+  ctx.fillStyle = 'rgba(255,255,255,.7)'; ctx.beginPath(); ctx.ellipse(cx - 6, cy - 4, 4, 2.5, -0.6, 0, 7); ctx.fill();
+  ctx.fillStyle = '#6b7280'; ctx.fillRect(cx + 5, cy - 14, 7, 6);
+  ctx.strokeStyle = '#d6b37a'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(cx + 9, cy - 14); ctx.quadraticCurveTo(cx + 12, cy - 22, cx + 17, cy - 19); ctx.stroke();
+  const sp = 3 + Math.random() * 3;
+  ctx.fillStyle = Math.random() > 0.5 ? '#facc15' : '#fb923c'; ctx.beginPath(); ctx.arc(cx + 17, cy - 19, sp, 0, 7); ctx.fill();
+  ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(cx + 17, cy - 19, 1.5, 0, 7); ctx.fill();
+}
+function drawPlayer(slot, x, y, alive, dir, walk, deathT, isMe, showTag, ghost) {
+  const cx = x * T + T / 2, cy = y * T + T / 2;
+  if (!alive && deathT > 1.2) return;
+  ctx.save(); ctx.translate(cx, cy);
+  if (alive && ghost) { ctx.globalAlpha = 0.72 + 0.12 * Math.sin(clock * 5); ctx.fillStyle = 'rgba(94,234,212,.22)'; ctx.beginPath(); ctx.arc(0, 0, 21, 0, 7); ctx.fill(); }
+  if (!alive) { ctx.globalAlpha = Math.max(0, 1 - deathT / 1.2); ctx.rotate(deathT * 8); const sc = 1 + deathT * 0.6; ctx.scale(sc, sc); }
+  const ph = walk * Math.PI * 1.6;
+  const bob = alive ? -Math.abs(Math.sin(ph)) * 2 : 0;
+  const stepA = alive ? Math.sin(ph) * 3 : 0;
+  ctx.fillStyle = 'rgba(0,0,0,.35)'; ctx.beginPath(); ctx.ellipse(0, 19, 13, 4, 0, 0, 7); ctx.fill();
+  // feet
+  ctx.fillStyle = '#1e293b';
+  ctx.beginPath(); ctx.roundRect(-11, 12 + stepA, 9, 7, 3); ctx.fill();
+  ctx.beginPath(); ctx.roundRect(2, 12 - stepA, 9, 7, 3); ctx.fill();
+  // antenna
+  ctx.strokeStyle = '#0f172a'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(0, -12 + bob); ctx.lineTo(dir === 'l' ? -3 : dir === 'r' ? 3 : 0, -21 + bob); ctx.stroke();
+  ctx.fillStyle = DARK[slot]; ctx.beginPath(); ctx.arc(dir === 'l' ? -3 : dir === 'r' ? 3 : 0, -22 + bob, 3.5, 0, 7); ctx.fill();
+  // body
+  ctx.fillStyle = COLORS[slot]; ctx.strokeStyle = '#0f172a'; ctx.lineWidth = 2.5;
+  ctx.beginPath(); ctx.roundRect(-14, -13 + bob, 28, 27, 9); ctx.fill(); ctx.stroke();
+  ctx.fillStyle = 'rgba(255,255,255,.35)'; ctx.beginPath(); ctx.roundRect(-10, -10 + bob, 8, 4, 2); ctx.fill();
+  // visor + eyes
+  if (dir !== 'u') {
+    const ox = dir === 'l' ? -3 : dir === 'r' ? 3 : 0;
+    ctx.fillStyle = '#0f172a'; ctx.beginPath(); ctx.roundRect(-10 + ox, -6 + bob, 20, 11, 5); ctx.fill();
+    ctx.fillStyle = alive ? '#7df9ff' : '#f87171';
+    if (alive) { ctx.fillRect(-6 + ox * 1.6, -3 + bob, 4, 5); ctx.fillRect(2 + ox * 1.6, -3 + bob, 4, 5); }
+    else { ctx.font = 'bold 10px monospace'; ctx.textAlign = 'center'; ctx.fillText('x x', ox, 3 + bob); }
+  } else {
+    ctx.fillStyle = DARK[slot]; ctx.fillRect(-9, -3 + bob, 18, 4);
+  }
+  ctx.restore();
+  if (showTag && alive) {
+    ctx.fillStyle = COLORS[slot]; ctx.strokeStyle = '#000'; ctx.lineWidth = 2;
+    const ty = cy - 34 + Math.sin(clock * 6) * 3;
+    ctx.beginPath(); ctx.moveTo(cx - 8, ty - 8); ctx.lineTo(cx + 8, ty - 8); ctx.lineTo(cx, ty + 2); ctx.closePath(); ctx.fill(); ctx.stroke();
+  }
+}
+function banner(text, sub, color = '#ffb020') {
+  ctx.fillStyle = 'rgba(5,8,18,.75)'; ctx.fillRect(0, cv.height / 2 - 60, cv.width, sub ? 120 : 90);
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  let size = 26; ctx.font = `${size}px "Press Start 2P", monospace`;
+  while (ctx.measureText(text).width > cv.width - 40 && size > 10) { size -= 2; ctx.font = `${size}px "Press Start 2P", monospace`; }
+  ctx.fillStyle = '#000'; ctx.fillText(text, cv.width / 2 + 3, cv.height / 2 - 12 + 3);
+  ctx.fillStyle = color; ctx.fillText(text, cv.width / 2, cv.height / 2 - 12);
+  if (sub) { ctx.font = '12px "Press Start 2P", monospace'; ctx.fillStyle = '#cbd5e1'; ctx.fillText(sub, cv.width / 2, cv.height / 2 + 30); }
+}
+function bigText(text, color) {
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = '64px "Press Start 2P", monospace';
+  ctx.fillStyle = '#000'; ctx.fillText(text, cv.width / 2 + 5, cv.height / 2 + 5);
+  ctx.fillStyle = color; ctx.fillText(text, cv.width / 2, cv.height / 2);
+}
+
+function render(v, dt) {
+  clock += dt;
+  const g = v.g;
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const i = idx(x, y), c = g[i], px = x * T, py = y * T;
+    if (c === '#') drawWall(px, py, x === 0 || y === 0 || x === W - 1 || y === H - 1);
+    else { drawFloor(px, py, x, y, y > 0 && g[i - W] === '#'); if (c === '+') drawCrate(px, py); }
+  }
+  for (const [i, t] of v.pu) drawPU(i, t);
+  for (const [i, k, t] of v.f) drawFlame(i, k, t);
+  for (const [x, y, f] of v.b) drawBomb(x, y, f);
+  for (const [x, y, t, c] of (v.fx || [])) {
+    const k = 1 - t / 0.5, cx = x * T + T / 2, cy = y * T + T / 2;
+    ctx.globalAlpha = Math.max(0, t / 0.5);
+    ctx.strokeStyle = '#e879f9'; ctx.lineWidth = 4; ctx.beginPath(); ctx.arc(cx, cy, 6 + k * 26, 0, 7); ctx.stroke();
+    ctx.strokeStyle = COLORS[c] || '#fff'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(cx, cy, 2 + k * 16, 0, 7); ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+  // players (smoothed on guests)
+  const order = v.p.map((p, i) => i);
+  v.p.forEach((p, i) => {
+    let d = disp[i];
+    if (mode !== 'guest' || !d || Math.abs(d.x - p[0]) + Math.abs(d.y - p[1]) > 1.5) disp[i] = d = { x: p[0], y: p[1] };
+    else { const k = 1 - Math.exp(-dt * 25); d.x += (p[0] - d.x) * k; d.y += (p[1] - d.y) * k; }
+  });
+  order.sort((a, b) => disp[a].y - disp[b].y);
+  const multi = mode !== 'local';
+  for (const i of order) {
+    const p = v.p[i];
+    drawPlayer(i, disp[i].x, disp[i].y, p[2], p[3], p[4], p[5], i === mySlot, multi && i === mySlot && (v.ph === 'count' || (v.ph === 'play' && v.tm > ROUND_TIME - 2)), p[10]);
+  }
+  // overlays
+  if (v.ph === 'count') bigText(String(Math.max(1, Math.ceil(v.ct))), '#ffb020');
+  else if (v.ph === 'play' && v.tm > ROUND_TIME - 0.7) bigText('GO!', '#a3e635');
+  else if (v.ph === 'round') banner(v.ban, 'Next round starting…');
+  else if (v.ph === 'match') banner(v.ban, mode === 'guest' ? 'Waiting for the host to start a rematch…' : 'Press R for a rematch');
+  if ((v.ph === 'play' || v.ph === 'grace') && v.tm <= 0 && v.tm > -2) banner('SUDDEN DEATH!', null, '#fb7185');
+  updateHUD(v);
+}
+
+let hudKey = '';
+function updateHUD(v) {
+  const timer = v.tm > 0 ? `${Math.floor(Math.ceil(v.tm) / 60)}:${String(Math.ceil(v.tm) % 60).padStart(2, '0')}` : 'SD!';
+  const key = JSON.stringify([timer, v.names, v.wins, v.con, v.p.map(p => [p[2], p[6], p[7], p[8], p[9], p[10], p[11]])]);
+  if (key === hudKey) return; hudKey = key;
+  const cards = v.names.map((n, i) => {
+    const p = v.p[i];
+    const stars = '★'.repeat(v.wins[i]) + '☆'.repeat(Math.max(0, WIN_TARGET - v.wins[i]));
+    return `<div class="card ${p[2] ? '' : 'dead'}"><div class="nm"><span class="dot" style="background:${COLORS[i]}"></span>${esc(n)}${i === mySlot && mode !== 'local' ? ' (you)' : ''}${v.con[i] ? '' : ' ✖'}</div>
+      <div class="wins">${stars}</div><div class="st"><span><i class="emo">💣</i>${p[6]}</span><span><i class="emo">🔥</i>${p[7]}</span><span><i class="emo">⚡</i>${p[8]}</span>${p[9] ? '<span><i class="emo">👢</i></span>' : ''}${p[10] ? '<span><i class="emo">👻</i></span>' : ''}${p[11] ? `<span><i class="emo">🌀</i>${p[11]}</span>` : ''}</div></div>`;
+  });
+  const half = Math.ceil(cards.length / 2);
+  $('#hud').innerHTML = cards.slice(0, half).join('') + `<div class="timer ${v.tm <= 0 ? 'sd' : ''}">${timer}</div>` + cards.slice(half).join('');
+}
+function esc(s) { return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+
+// ================== MAIN LOOP ==================
+let lastT = performance.now(), acc = 0, sendTick = 0;
+function simStep() {
+  const now = performance.now(), dt = Math.min(0.25, (now - lastT) / 1000); lastT = now;
+  if ((mode === 'local' || mode === 'host') && started && S) {
+    readLocalInputs();
+    acc += dt;
+    while (acc >= 1 / 60) { tick(1 / 60); acc -= 1 / 60; }
+    view = snapshot();
+    playEvents(localEv.splice(0));
+    if (mode === 'host' && (sendTick++ % 2 === 0)) broadcast({ ...view, ev: netEv.splice(0) });
+  }
+}
+setInterval(simStep, 1000 / 60);
+let lastR = performance.now();
+function frame(now) {
+  const dt = Math.min(0.1, (now - lastR) / 1000); lastR = now;
+  if (started && view) render(view, dt);
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+
+// ================== SCREENS ==================
+function show(id) { for (const s of ['menu', 'lobby', 'game']) $('#' + s).classList.toggle('hidden', s !== id); }
+function getName() {
+  const n = ($('#name').value.trim() || 'Player').slice(0, 12);
+  myName = n; try { localStorage.setItem('bg-name', n); } catch (e) { }
+  return n;
+}
+function menuStatus(t) { $('#menuStatus').textContent = t || ''; }
+function lobbyStatus(t) { $('#lobbyStatus').textContent = t || ''; }
+
+function resetAll() {
+  started = false; S = null; M = null; view = null; mode = null; hudKey = ''; disp.length = 0;
+  conns.forEach(c => { try { c.conn.close(); } catch (e) { } }); conns = [];
+  if (hostConn) { try { hostConn.close(); } catch (e) { } hostConn = null; }
+  if (peer) { try { peer.destroy(); } catch (e) { } peer = null; }
+  keys.clear(); inputs = [];
+}
+function toMenu(msg) { resetAll(); show('menu'); menuStatus(msg); }
+
+function enterGame() {
+  show('game'); started = true; hudKey = ''; disp.length = 0; acc = 0; lastT = performance.now();
+  $('#controls').textContent = mode === 'local'
+    ? 'P1: WASD · SPACE bomb · E teleport   |   P2: ARROWS · ENTER bomb · R-SHIFT teleport'
+    : 'MOVE: WASD / ARROWS · BOMB: SPACE / ENTER · TELEPORT: E / R-SHIFT';
+}
+
+// ---- Local ----
+$('#btnLocal').onclick = () => {
+  unlockAudio(); resetAll(); mode = 'local'; mySlot = 0;
+  const n = getName();
+  M = { players: [{ name: n === 'Player' ? 'Player 1' : n, wins: 0 }, { name: 'Player 2', wins: 0 }], target: WIN_TARGET };
+  inputs = []; readLocalInputs(); newRound(); enterGame();
+};
+
+// ---- Host ----
+function genCode() { const a = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; let s = ''; for (let i = 0; i < 5; i++) s += a[Math.random() * a.length | 0]; return s; }
+function peerErrorText(err) {
+  const t = err && err.type;
+  if (t === 'peer-unavailable') return 'No game found with that code. Check it and try again.';
+  if (t === 'network' || t === 'server-error' || t === 'socket-error' || t === 'socket-closed') return 'Can\'t reach the matchmaking server. Check your internet connection.';
+  if (t === 'browser-incompatible') return 'This browser doesn\'t support WebRTC.';
+  return 'Connection error: ' + (t || err);
+}
+
+$('#btnHost').onclick = () => {
+  unlockAudio();
+  if (typeof Peer === 'undefined') { menuStatus('Online library failed to load — check your internet connection.'); return; }
+  resetAll(); mode = 'host'; mySlot = 0; getName();
+  show('lobby'); $('#hostBox').classList.remove('hidden'); $('#btnStart').classList.remove('hidden');
+  $('#roomCode').textContent = '·····'; lobbyStatus('Creating room…');
+  startHostPeer();
+  renderLobby();
+};
+function startHostPeer(tries = 0) {
+  const code = genCode();
+  peer = new Peer(ID_PREFIX + code);
+  peer.on('open', () => { $('#roomCode').textContent = code; lobbyStatus(''); });
+  peer.on('error', err => {
+    if (err.type === 'unavailable-id' && tries < 5) { peer.destroy(); startHostPeer(tries + 1); return; }
+    if (mode === 'host') lobbyStatus(peerErrorText(err));
+  });
+  peer.on('connection', conn => {
+    const entry = { conn, name: 'Guest', slot: -1, open: false };
+    conn.on('open', () => {
+      if (started || conns.filter(c => c.open).length >= MAX_PLAYERS - 1) {
+        conn.send({ t: 'reject', why: started ? 'Game already in progress — wait for the host to return to the lobby.' : 'Room is full.' });
+        setTimeout(() => conn.close(), 300); return;
+      }
+      entry.open = true; conns.push(entry); renderLobby();
+    });
+    conn.on('data', d => {
+      if (!d || typeof d !== 'object') return;
+      if (d.t === 'hello') { entry.name = String(d.name || 'Guest').slice(0, 12); renderLobby(); }
+      else if (d.t === 'in' && entry.slot >= 0 && d.k) inputs[entry.slot] = d.k;
+    });
+    conn.on('close', () => {
+      entry.open = false; conns = conns.filter(c => c !== entry);
+      if (started && entry.slot >= 0 && M && M.players[entry.slot]) {
+        M.players[entry.slot].connected = false;
+        if (S && S.players[entry.slot]) kill(S.players[entry.slot]);
+      }
+      if (!started) renderLobby();
+    });
+  });
+}
+function broadcast(msg) { for (const c of conns) if (c.open && c.conn.open) { try { c.conn.send(msg); } catch (e) { } } }
+function lobbyPlayers() { return [{ name: myName }].concat(conns.filter(c => c.open).map(c => ({ name: c.name }))); }
+function renderLobby(list) {
+  list = list || lobbyPlayers();
+  $('#plist').innerHTML = list.map((p, i) => `<li><span class="dot" style="background:${COLORS[i]}"></span>${esc(p.name)}${i === 0 ? ' (host)' : ''}</li>`).join('')
+    + (list.length < 2 ? '<li style="color:var(--dim)">Waiting for players…</li>' : '');
+  if (mode === 'host') {
+    $('#btnStart').disabled = list.length < 2;
+    broadcast({ t: 'lobby', players: list.map(p => p.name) });
+  }
+}
+function startMatch() {
+  if (mode === 'local') { M.players.forEach(p => p.wins = 0); newRound(); return; }
+  const open = conns.filter(c => c.open);
+  if (open.length < 1) { // everyone left: back to lobby
+    started = false; show('lobby'); renderLobby(); lobbyStatus('Your colleague left. Waiting for players…'); return;
+  }
+  open.forEach((c, i) => c.slot = i + 1);
+  M = { players: [{ name: myName, wins: 0 }].concat(open.map(c => ({ name: c.name, wins: 0 }))), target: WIN_TARGET };
+  inputs = []; readLocalInputs();
+  open.forEach(c => c.conn.send({ t: 'start', slot: c.slot }));
+  newRound(); enterGame();
+}
+$('#btnStart').onclick = () => { unlockAudio(); startMatch(); };
+$('#btnCopy').onclick = () => {
+  const code = $('#roomCode').textContent;
+  try { navigator.clipboard.writeText(code).then(() => lobbyStatus('Code copied!'), () => lobbyStatus('Copy failed — select the code manually.')); }
+  catch (e) { lobbyStatus('Copy failed — select the code manually.'); }
+};
+$('#btnLeave').onclick = () => toMenu('');
+$('#btnQuit').onclick = () => { if (confirm('Quit to the main menu?')) toMenu(''); };
+
+// ---- Guest ----
+$('#btnJoin').onclick = () => {
+  unlockAudio();
+  const code = $('#code').value.trim().toUpperCase();
+  if (!code) { menuStatus('Type the room code your colleague gave you.'); return; }
+  if (typeof Peer === 'undefined') { menuStatus('Online library failed to load — check your internet connection.'); return; }
+  resetAll(); mode = 'guest'; getName(); menuStatus('Connecting…');
+  peer = new Peer();
+  peer.on('error', err => { if (mode === 'guest') toMenu(peerErrorText(err)); });
+  peer.on('open', () => {
+    hostConn = peer.connect(ID_PREFIX + code, { reliable: true });
+    const timeout = setTimeout(() => { if (mode === 'guest' && !(hostConn && hostConn.open)) toMenu('Could not connect. The host may be behind a strict firewall — try another network.'); }, 15000);
+    hostConn.on('open', () => {
+      clearTimeout(timeout);
+      hostConn.send({ t: 'hello', name: myName });
+      show('lobby'); $('#hostBox').classList.add('hidden'); $('#btnStart').classList.add('hidden');
+      lobbyStatus(''); menuStatus('');
+    });
+    hostConn.on('data', d => {
+      if (!d || typeof d !== 'object') return;
+      if (d.t === 'reject') toMenu(d.why);
+      else if (d.t === 'lobby') { renderLobby(d.players.map(n => ({ name: n }))); lobbyStatus('Waiting for the host to start…'); }
+      else if (d.t === 'start') { mySlot = d.slot; localIn[0].bombSeq = 0; localIn[0].teleSeq = 0; lastSent = ''; view = null; enterGame(); sendGuestInput(); }
+      else if (d.t === 's') { view = d; if (d.ev) playEvents(d.ev); }
+    });
+    hostConn.on('close', () => { if (mode === 'guest') toMenu('The host closed the game.'); });
+  });
+};
+</script>
+</body>
+</html>
