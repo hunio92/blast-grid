@@ -90,7 +90,7 @@
     <b>NEW</b><br>
     <i class="emo">🧤</i> glove — stand on a bomb and press BOMB again to throw it over walls<br>
     <i class="emo">🧨</i> +2 mines — your next drops are hidden mines that trigger on opponents<br>
-    <i class="emo">❄️</i> freeze — all opponents frozen for 2.5s &nbsp; <i class="emo">🔄</i> swap — trade places with a random opponent<br>
+    <i class="emo">❄️</i> freeze — all opponents frozen for 2.5s<br>
     <i class="emo">⭐</i> star bomb — blasts also go diagonally &nbsp; <i class="emo">👁️</i> invisible — opponents can't see you for 8s
   </div>
 </div>
@@ -174,7 +174,7 @@ function buildSpiral() {
 const PU_TABLE = [['b', 22], ['f', 22], ['s', 12], ['k', 8], ['t', 8], ['g', 6],
   ['r', 6], ['p', 6], ['u', 3], ['v', 5], ['h', 4], ['w', 4], ['l', 4], ['m', 3], ['x', 6],
   ['d', 4], ['n', 4], ['e', 4], // d fire down  n bomb down  e speed down (Geta)
-  ['o', 5], ['j', 4], ['z', 3], ['c', 3], ['y', 4], ['i', 3]]; // o glove  j mines  z freeze  c swap  y star bomb  i invisibility
+  ['o', 5], ['j', 4], ['z', 3], ['y', 4], ['i', 3]]; // o glove  j mines  z freeze  y star bomb  i invisibility
 const PU_TOTAL = PU_TABLE.reduce((a, [, w]) => a + w, 0);
 function randPU() { let r = Math.random() * PU_TOTAL; for (const [t, w] of PU_TABLE) if ((r -= w) < 0) return t; return 'b'; }
 const MAX_RANGE = 8, REMOTE_FUSE = 8, VEST_TIME = 8, HIT_INV = 1.5, CURSE_TIME = 10, FREEZE_TIME = 2.5, INVIS_TIME = 8, MINE_ARM = 1.0;
@@ -330,16 +330,6 @@ function placeMine(p, x, y) {
   S.bombs.push({ x, y, fuse: 9999, owner: p.slot, range: 3, pass: new Set(), dead: false, vx: 0, vy: 0, prog: 0,
     remote: false, pierce: false, power: false, star: false, mine: true, armT: MINE_ARM });
   p.mines--; ev('place');
-}
-
-function swapWith(p) {
-  const others = S.players.filter(q => q !== p && q.alive);
-  if (!others.length) return;
-  const q = others[Math.random() * others.length | 0];
-  S.fx.push({ x: Math.round(p.x), y: Math.round(p.y), t: 0.5, c: p.slot }, { x: Math.round(q.x), y: Math.round(q.y), t: 0.5, c: q.slot });
-  [p.x, q.x] = [q.x, p.x]; [p.y, q.y] = [q.y, p.y];
-  for (const b of S.bombs) for (const r of [p, q]) if (Math.abs(r.x - b.x) < 0.98 && Math.abs(r.y - b.y) < 0.98) b.pass.add(r.slot);
-  ev('tele');
 }
 
 function placeBomb(p) {
@@ -528,7 +518,6 @@ function tick(dt) {
       if (t === 'j') p.mines = Math.min(5, p.mines + 2);
       if (t === 'y') p.star = true;
       if (t === 'i') p.invis = INVIS_TIME;
-      if (t === 'c') swapWith(p);
       if (t === 'z') {
         for (const q of S.players) if (q !== p && q.alive) { q.frozen = FREEZE_TIME; S.fx.push({ x: Math.round(q.x), y: Math.round(q.y), t: 0.5, c: q.slot }); }
         ev('freeze');
@@ -689,7 +678,7 @@ function drawPU(i, type) {
   const glow = 0.5 + 0.5 * Math.sin(clock * 6);
   ctx.fillStyle = { b: '#334155', f: '#7c2d12', s: '#1e3a8a', k: '#3f2a1d', t: '#4c1d95', g: '#134e4a',
     r: '#164e63', p: '#7f1d1d', u: '#78350f', v: '#0c4a6e', h: '#881337', w: '#365314', l: '#3f3f46', m: '#713f12', x: '#2e1065', d: '#450a0a', n: '#450a0a', e: '#450a0a',
-    o: '#701a75', j: '#1f2937', z: '#155e75', c: '#3730a3', y: '#854d0e', i: '#374151' }[type];
+    o: '#701a75', j: '#1f2937', z: '#155e75', y: '#854d0e', i: '#374151' }[type];
   ctx.strokeStyle = `rgba(250,204,21,${0.5 + glow * 0.5})`; ctx.lineWidth = 3;
   ctx.beginPath(); ctx.roundRect(px + 6, py + 6, T - 12, T - 12, 7); ctx.fill(); ctx.stroke();
   if (type === 'b') {
@@ -728,12 +717,6 @@ function drawPU(i, type) {
       ctx.beginPath(); ctx.moveTo(cx - ax, cy - ay); ctx.lineTo(cx + ax, cy + ay); ctx.stroke();
     }
     ctx.lineCap = 'butt'; ctx.fillStyle = '#7dd3fc'; ctx.beginPath(); ctx.arc(cx, cy, 3, 0, 7); ctx.fill();
-  } else if (type === 'c') { // swap: two arrows
-    ctx.strokeStyle = '#c7d2fe'; ctx.fillStyle = '#c7d2fe'; ctx.lineWidth = 3;
-    ctx.beginPath(); ctx.arc(cx, cy, 9, Math.PI * 1.1, Math.PI * 1.9); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(cx + 11, cy - 7); ctx.lineTo(cx + 5, cy - 9); ctx.lineTo(cx + 10, cy - 1); ctx.fill();
-    ctx.beginPath(); ctx.arc(cx, cy, 9, Math.PI * 0.1, Math.PI * 0.9); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(cx - 11, cy + 7); ctx.lineTo(cx - 5, cy + 9); ctx.lineTo(cx - 10, cy + 1); ctx.fill();
   } else if (type === 'y') { // star bomb
     ctx.fillStyle = '#fde047'; ctx.strokeStyle = '#000'; ctx.lineWidth = 1.5; ctx.beginPath();
     for (let k = 0; k < 10; k++) { const a = -Math.PI / 2 + k * Math.PI / 5, r = k % 2 ? 6 : 14; ctx.lineTo(cx + Math.cos(a) * r, cy + 1 + Math.sin(a) * r); }
