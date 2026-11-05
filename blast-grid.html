@@ -84,11 +84,12 @@
     <i class="emo">🎯</i> pierce — blasts burn through crates<br>
     <i class="emo">🔥</i> MAX — full blast range &nbsp; <i class="emo">💥</i> power bomb — next bomb is max size<br>
     <i class="emo">🛡️</i> vest — 8s invincible &nbsp; <i class="emo">❤️</i> heart — survive one extra hit<br>
-    <i class="emo">🧱</i> soft pass — walk through crates &nbsp; <i class="emo">➖</i> line bomb — drops all bombs in a row<br>
+    <i class="emo">🧱</i> wall pass — walk through crates for 5s &nbsp; <i class="emo">➖</i> line bomb — drops all bombs in a row<br>
     <span style="color:#fb7185">BAD:</span> red ↓ items shrink your blast, bomb count or speed (min 1 / 1 / −3)<br>
     <i class="emo">💀</i> skull — random curse for 10s (slow, rush, no bombs, auto bombs, weak, reversed)<br>
+    <b>MAP</b> <i class="emo">🕳️</i> teleport holes come in colored pairs — step in one, pop out of the other<br>
     <b>NEW</b><br>
-    <i class="emo">🧤</i> glove — stand on a bomb and press BOMB again to throw it over walls<br>
+    <i class="emo">🧤</i> glove — press BOMB while standing on (or facing) a bomb to throw it over walls<br>
     <i class="emo">🧨</i> +2 mines — your next drops are hidden mines that trigger on opponents<br>
     <i class="emo">❄️</i> freeze — all opponents frozen for 2.5s<br>
     <i class="emo">⭐</i> star bomb — blasts also go diagonally &nbsp; <i class="emo">👁️</i> invisible — opponents can't see you for 8s
@@ -139,7 +140,7 @@ const COLORS = ['#f8fafc', '#38bdf8', '#fb7185', '#a3e635'];
 const DARK   = ['#94a3b8', '#0369a1', '#be123c', '#4d7c0f'];
 const spawnPoints = () => [[1, 1], [W - 2, H - 2], [W - 2, 1], [1, H - 2]];
 const FUSE = 2.4, FLAME_T = 0.55, WIN_TARGET = 3, MAX_PLAYERS = 4;
-const ID_PREFIX = 'blastgrid-v3-'; // bump when the network format changes so old and new versions don't mix
+const ID_PREFIX = 'blastgrid-v4-'; // bump when the network format changes so old and new versions don't mix
 const idx = (x, y) => y * W + x;
 const $ = s => document.querySelector(s);
 
@@ -174,10 +175,12 @@ function buildSpiral() {
 const PU_TABLE = [['b', 22], ['f', 22], ['s', 12], ['k', 8], ['t', 8], ['g', 6],
   ['r', 6], ['p', 6], ['u', 3], ['v', 5], ['h', 4], ['w', 4], ['l', 4], ['m', 3], ['x', 6],
   ['d', 4], ['n', 4], ['e', 4], // d fire down  n bomb down  e speed down (Geta)
-  ['o', 5], ['j', 4], ['z', 3], ['y', 4], ['i', 3]]; // o glove  j mines  z freeze  y star bomb  i invisibility
+  ['o', 8], ['j', 4], ['z', 3], ['y', 4], ['i', 3]]; // o glove  j mines  z freeze  y star bomb  i invisibility
 const PU_TOTAL = PU_TABLE.reduce((a, [, w]) => a + w, 0);
 function randPU() { let r = Math.random() * PU_TOTAL; for (const [t, w] of PU_TABLE) if ((r -= w) < 0) return t; return 'b'; }
 const MAX_RANGE = 8, REMOTE_FUSE = 8, VEST_TIME = 8, HIT_INV = 1.5, CURSE_TIME = 10, FREEZE_TIME = 2.5, INVIS_TIME = 8, MINE_ARM = 1.0;
+const SOFT_TIME = 5;
+const PORTAL_COLORS = ['#c084fc', '#2dd4bf', '#fb923c'];
 const DIRV = { l: [-1, 0], r: [1, 0], u: [0, -1], d: [0, 1] };
 const CURSES = ['slow', 'rush', 'nobomb', 'auto', 'weak', 'rev'];
 const CURSE_LABEL = { slow: 'SLOW', rush: 'RUSH', nobomb: 'NO BOMBS', auto: 'AUTO BOMB', weak: 'WEAK', rev: 'REVERSED' };
@@ -189,20 +192,33 @@ function newRound() {
   const SPAWNS = spawnPoints();
   const safe = new Set();
   SPAWNS.forEach(([sx, sy]) => { for (const [dx, dy] of [[0,0],[1,0],[-1,0],[0,1],[0,-1]]) safe.add(idx(sx + dx, sy + dy)); });
+  // teleport holes: mirrored pairs on crossings, away from spawns, with the crossing kept clear of crates
+  const pairCount = W >= 27 ? 3 : W >= 21 ? 2 : 1;
+  const portals = [], clear = new Set();
+  for (let tries = 0; portals.length < pairCount && tries < 300; tries++) {
+    const x = 1 + 2 * (Math.random() * ((W - 1) / 2) | 0), y = 1 + 2 * (Math.random() * ((H - 1) / 2) | 0);
+    const mx = W - 1 - x, my = H - 1 - y;
+    if (x === mx && y === my) continue;
+    const a = idx(x, y), b = idx(mx, my);
+    if (clear.has(a) || clear.has(b)) continue;
+    if (SPAWNS.some(([sx, sy]) => Math.abs(sx - x) + Math.abs(sy - y) < 4 || Math.abs(sx - mx) + Math.abs(sy - my) < 4)) continue;
+    portals.push([a, b]);
+    for (const [cx, cy] of [[x, y], [mx, my]]) for (const [dx, dy] of [[0,0],[1,0],[-1,0],[0,1],[0,-1]]) clear.add(idx(cx + dx, cy + dy));
+  }
   const hidden = new Map();
   for (let i = 0; i < grid.length; i++) {
-    if (grid[i] === '.' && !safe.has(i) && Math.random() < 0.75) {
+    if (grid[i] === '.' && !safe.has(i) && !clear.has(i) && Math.random() < 0.75) {
       grid[i] = '+';
       if (Math.random() < 0.34) hidden.set(i, randPU());
     }
   }
   S = {
-    grid, hidden, pu: new Map(), bombs: [], flames: new Map(), fx: [],
+    grid, hidden, pu: new Map(), bombs: [], flames: new Map(), fx: [], portals, portalAt: new Map(portals.flatMap(([a, b]) => [[a, b], [b, a]])),
     players: M.players.map((pl, i) => ({
       slot: i, x: SPAWNS[i][0], y: SPAWNS[i][1], alive: pl.connected !== false, dir: 'd', walk: 0,
       maxBombs: 1, range: 2, speed: 0, kick: false, ghost: false, tele: 0, bombsOut: 0, deathT: 9,
-      remote: false, pierce: false, soft: false, line: false, power: 0, hp: 1, inv: 0, curse: '', curseT: 0, autoT: 0,
-      glove: false, star: false, mines: 0, frozen: 0, invis: 0,
+      remote: false, pierce: false, softT: 0, line: false, power: 0, hp: 1, inv: 0, curse: '', curseT: 0, autoT: 0,
+      glove: false, star: false, mines: 0, frozen: 0, invis: 0, portalLock: -1,
       lastSeq: (inputs[i] && inputs[i].bombSeq) || 0, lastTele: (inputs[i] && inputs[i].teleSeq) || 0, lastDet: (inputs[i] && inputs[i].detSeq) || 0,
     })),
     phase: 'count', t: 3, time: roundTime, spiral: buildSpiral(), sdT: 0, banner: '',
@@ -215,14 +231,14 @@ function ev(e) { localEv.push(e); netEv.push(e); }
 function blocked(x, y, p) {
   if (x < 0 || y < 0 || x >= W || y >= H) return true;
   const c = S.grid[idx(x, y)];
-  if (c !== '.' && !(c === '+' && p.soft)) return true;
+  if (c !== '.' && !(c === '+' && p.softT > 0)) return true;
   const b = S.bombs.find(b => b.x === x && b.y === y && !b.mine);
   return !!(b && !b.pass.has(p.slot) && !p.ghost);
 }
 
 // Can a sliding bomb enter tile (x,y)?
 function bombFree(x, y, self) {
-  if (x < 0 || y < 0 || x >= W || y >= H || S.grid[idx(x, y)] !== '.') return false;
+  if (x < 0 || y < 0 || x >= W || y >= H || S.grid[idx(x, y)] !== '.' || S.portalAt.has(idx(x, y))) return false;
   if (S.bombs.some(q => q !== self && !q.dead && q.x === x && q.y === y)) return false;
   return !S.players.some(p => p.alive && Math.abs(p.x - x) < 0.9 && Math.abs(p.y - y) < 0.9);
 }
@@ -298,7 +314,7 @@ function movePlayer(p, inp, dt) {
 
 function placeOne(p, x, y) {
   const i = idx(x, y);
-  if (p.bombsOut >= p.maxBombs || S.grid[i] !== '.' || S.bombs.some(b => b.x === x && b.y === y)) return false;
+  if (p.bombsOut >= p.maxBombs || S.grid[i] !== '.' || S.portalAt.has(i) || S.bombs.some(b => b.x === x && b.y === y)) return false;
   let range = p.curse === 'weak' ? 1 : p.range, power = false;
   if (p.power > 0) { p.power--; range = MAX_RANGE; power = true; }
   const b = {
@@ -326,17 +342,52 @@ function throwBomb(p, b) {
 
 // Mine: hidden, no fuse, arms after a moment and goes off when an opponent steps on it
 function placeMine(p, x, y) {
-  if (S.grid[idx(x, y)] !== '.' || S.bombs.some(b => !b.dead && b.x === x && b.y === y)) return;
+  if (S.grid[idx(x, y)] !== '.' || S.portalAt.has(idx(x, y)) || S.bombs.some(b => !b.dead && b.x === x && b.y === y)) return;
   S.bombs.push({ x, y, fuse: 9999, owner: p.slot, range: 3, pass: new Set(), dead: false, vx: 0, vy: 0, prog: 0,
     remote: false, pierce: false, power: false, star: false, mine: true, armT: MINE_ARM });
   p.mines--; ev('place');
 }
 
+// Wall pass ran out while inside a crate: pop out to the nearest free tile
+function unstick(p) {
+  const sx = Math.round(p.x), sy = Math.round(p.y);
+  if (S.grid[idx(sx, sy)] !== '+') return;
+  const seen = new Set([idx(sx, sy)]), q = [[sx, sy]];
+  while (q.length) {
+    const [x, y] = q.shift();
+    for (const [dx, dy] of [[1,0],[-1,0],[0,1],[0,-1]]) {
+      const nx = x + dx, ny = y + dy, i = idx(nx, ny);
+      if (nx < 0 || ny < 0 || nx >= W || ny >= H || seen.has(i) || S.grid[i] === '#') continue;
+      seen.add(i);
+      if (S.grid[i] === '.' && !S.bombs.some(b => !b.dead && !b.mine && b.x === nx && b.y === ny)) {
+        S.fx.push({ x: sx, y: sy, t: 0.5, c: p.slot }, { x: nx, y: ny, t: 0.5, c: p.slot });
+        p.x = nx; p.y = ny; ev('tele');
+        return;
+      }
+      q.push([nx, ny]);
+    }
+  }
+}
+
+// Teleport holes: entering one drops you on its partner; you must step off before it works again
+function usePortal(p) {
+  const here = idx(Math.round(p.x), Math.round(p.y));
+  if (p.portalLock !== here) p.portalLock = -1;
+  const dest = S.portalAt.get(here);
+  if (dest === undefined || p.portalLock === here) return;
+  const dx = dest % W, dy = (dest / W) | 0;
+  S.fx.push({ x: Math.round(p.x), y: Math.round(p.y), t: 0.5, c: p.slot }, { x: dx, y: dy, t: 0.5, c: p.slot });
+  p.x = dx; p.y = dy; p.portalLock = dest; ev('portal');
+  for (const b of S.bombs) if (Math.abs(p.x - b.x) < 0.98 && Math.abs(p.y - b.y) < 0.98) b.pass.add(p.slot);
+}
+
 function placeBomb(p) {
   if (p.curse === 'nobomb') return;
   const x = Math.round(p.x), y = Math.round(p.y);
-  if (p.glove) {
-    const b = S.bombs.find(q => !q.dead && !q.fly && !q.mine && q.x === x && q.y === y);
+  if (p.glove) { // throw the bomb you're on, or the one right in front of you
+    const [dx, dy] = DIRV[p.dir];
+    const b = S.bombs.find(q => !q.dead && !q.fly && !q.mine && q.x === x && q.y === y)
+      || S.bombs.find(q => !q.dead && !q.fly && !q.mine && !q.vx && !q.vy && q.x === x + dx && q.y === y + dy);
     if (b && throwBomb(p, b)) return;
   }
   if (p.mines > 0) { placeMine(p, x, y); return; }
@@ -431,6 +482,7 @@ function tick(dt) {
       if (S.grid[i] === '#') continue;
       S.sdT += S.sdStep;
       S.grid[i] = '#'; S.pu.delete(i); S.flames.delete(i); S.hidden.delete(i);
+      if (S.portalAt.has(i)) { S.portalAt.delete(S.portalAt.get(i)); S.portalAt.delete(i); }
       S.bombs.forEach(b => { if (b.x === x && b.y === y && !b.dead) { b.dead = true; const o = S.players[b.owner]; if (o && !b.mine) o.bombsOut--; } });
       S.players.forEach(p => { if (p.alive && Math.round(p.x) === x && Math.round(p.y) === y) kill(p); });
       ev('thud');
@@ -444,6 +496,7 @@ function tick(dt) {
     if (p.inv > 0) p.inv = Math.max(0, p.inv - dt);
     if (p.curseT > 0) { p.curseT -= dt; if (p.curseT <= 0) { p.curse = ''; p.curseT = 0; } }
     if (p.invis > 0) p.invis = Math.max(0, p.invis - dt);
+    if (p.softT > 0) { p.softT -= dt; if (p.softT <= 0) { p.softT = 0; unstick(p); } }
     if (p.frozen > 0) { // frozen: no moving, and button presses made while frozen are dropped
       p.frozen = Math.max(0, p.frozen - dt);
       if (inp.bombSeq !== undefined) p.lastSeq = inp.bombSeq;
@@ -492,6 +545,7 @@ function tick(dt) {
   for (const [i, f] of S.flames) { f.t -= dt; if (f.t <= 0) { S.flames.delete(i); if (f.reveal) S.pu.set(i, f.reveal); } }
   for (const p of S.players) {
     if (!p.alive) continue;
+    usePortal(p);
     const i = idx(Math.round(p.x), Math.round(p.y));
     if (S.flames.has(i)) { hurt(p); if (!p.alive) continue; }
     const t = S.pu.get(i);
@@ -508,7 +562,7 @@ function tick(dt) {
       if (t === 'u') p.range = MAX_RANGE;
       if (t === 'v') p.inv = Math.max(p.inv, VEST_TIME);
       if (t === 'h') p.hp = Math.min(3, p.hp + 1);
-      if (t === 'w') p.soft = true;
+      if (t === 'w') p.softT = SOFT_TIME;
       if (t === 'l') p.line = true;
       if (t === 'm') p.power = Math.min(3, p.power + 1);
       if (t === 'd') p.range = Math.max(1, p.range - 1);
@@ -533,6 +587,7 @@ function tick(dt) {
 function snapshot() {
   return {
     t: 's', g: S.grid.join(''), pu: [...S.pu],
+    po: S.portals.map(([a, b], j) => [a, b, j]).filter(([a]) => S.portalAt.has(a)),
     b: S.bombs.map(b => {
       let x = b.x + b.vx * b.prog, y = b.y + b.vy * b.prog, z = 0;
       if (b.fly) { const k = b.fly.t / b.fly.dur; x = b.fly.sx + (b.fly.tx - b.fly.sx) * k; y = b.fly.sy + (b.fly.ty - b.fly.sy) * k; z = Math.sin(Math.PI * k) * 40; }
@@ -542,8 +597,8 @@ function snapshot() {
     fx: S.fx.map(f => [f.x, f.y, +f.t.toFixed(2), f.c]),
     f: [...S.flames].map(([i, f]) => [i, f.k, +f.t.toFixed(2)]),
     p: S.players.map(p => [+p.x.toFixed(3), +p.y.toFixed(3), p.alive ? 1 : 0, p.dir, +p.walk.toFixed(2), +Math.min(p.deathT, 9).toFixed(2), p.maxBombs, p.range, p.speed, p.kick ? 1 : 0, p.ghost ? 1 : 0, p.tele,
-      (p.remote ? 1 : 0) | (p.pierce ? 2 : 0) | (p.soft ? 4 : 0) | (p.line ? 8 : 0), p.power, p.hp, +p.inv.toFixed(2), p.curse, Math.ceil(p.curseT),
-      +p.frozen.toFixed(2), +p.invis.toFixed(2), (p.glove ? 1 : 0) | (p.star ? 2 : 0), p.mines]),
+      (p.remote ? 1 : 0) | (p.pierce ? 2 : 0) | (p.softT > 0 ? 4 : 0) | (p.line ? 8 : 0), p.power, p.hp, +p.inv.toFixed(2), p.curse, Math.ceil(p.curseT),
+      +p.frozen.toFixed(2), +p.invis.toFixed(2), (p.glove ? 1 : 0) | (p.star ? 2 : 0), p.mines, +p.softT.toFixed(2)]),
     ph: S.phase, ct: +S.t.toFixed(2), tm: +S.time.toFixed(2), rt: roundTime, w: W, h: H, ban: S.banner,
     names: M.players.map(q => q.name), wins: M.players.map(q => q.wins), con: M.players.map(q => q.connected !== false),
   };
@@ -632,6 +687,7 @@ function sfx(name) {
   else if (name === 'win') [523, 659, 784, 1047].forEach((f, i) => tone('square', f, f, 0.14, 0.07, i * 0.12));
   else if (name === 'kick') tone('square', 180, 70, 0.12, 0.12);
   else if (name === 'tele') { tone('sine', 300, 1400, 0.22, 0.15); tone('triangle', 1400, 300, 0.2, 0.08, 0.12); }
+  else if (name === 'portal') { tone('sine', 700, 180, 0.18, 0.12); tone('sine', 180, 900, 0.2, 0.1, 0.15); }
   else if (name === 'throw') tone('triangle', 320, 760, 0.18, 0.12);
   else if (name === 'freeze') { tone('sine', 1800, 900, 0.3, 0.1); tone('sine', 2400, 1200, 0.3, 0.06, 0.08); }
   else if (name === 'thud') tone('sine', 110, 50, 0.15, 0.25);
@@ -806,6 +862,17 @@ function drawFlame(i, k, t) {
     if (k === 'c') { ctx.beginPath(); ctx.arc(cx, cy, l * 0.62, 0, 7); ctx.fill(); }
   }
 }
+function drawPortal(i, col) {
+  const x = i % W, y = (i / W) | 0, cx = x * T + T / 2, cy = y * T + T / 2;
+  ctx.fillStyle = '#05060f'; ctx.beginPath(); ctx.ellipse(cx, cy, 20, 16, 0, 0, 7); ctx.fill();
+  ctx.lineWidth = 3;
+  for (let k = 0; k < 3; k++) {
+    ctx.strokeStyle = col; ctx.globalAlpha = 1 - k * 0.25;
+    const a = clock * (3 + k) * (k % 2 ? -1 : 1) + k * 2;
+    ctx.beginPath(); ctx.ellipse(cx, cy, 18 - k * 5, 14 - k * 4, 0, a, a + 4.2); ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+}
 function drawMine(x, y, armed) {
   const cx = x * T + T / 2, cy = y * T + T / 2;
   ctx.globalAlpha = 0.55;
@@ -848,7 +915,7 @@ function drawPlayer(slot, x, y, alive, dir, walk, deathT, isMe, showTag, ghost, 
   if (!alive && deathT > 1.2) return;
   ctx.save(); ctx.translate(cx, cy);
   if (alive && ghost) { ctx.globalAlpha = 0.72 + 0.12 * Math.sin(clock * 5); ctx.fillStyle = 'rgba(94,234,212,.22)'; ctx.beginPath(); ctx.arc(0, 0, 21, 0, 7); ctx.fill(); }
-  if (alive && soft) { ctx.globalAlpha = 0.9; ctx.strokeStyle = 'rgba(190,242,100,.6)'; ctx.lineWidth = 2; ctx.setLineDash([4, 4]); ctx.beginPath(); ctx.arc(0, 0, 23, clock * 2, clock * 2 + 7); ctx.stroke(); ctx.setLineDash([]); }
+  if (alive && soft && (soft > 1.5 || Math.sin(clock * 20) > 0)) { ctx.globalAlpha = 0.9; ctx.strokeStyle = 'rgba(190,242,100,.6)'; ctx.lineWidth = 2; ctx.setLineDash([4, 4]); ctx.beginPath(); ctx.arc(0, 0, 23, clock * 2, clock * 2 + 7); ctx.stroke(); ctx.setLineDash([]); }
   if (alive && inv > 0 && (inv > 1.5 || Math.sin(clock * 30) > -0.3)) { // vest / hit invincibility shield
     ctx.globalAlpha = 0.85; ctx.fillStyle = 'rgba(56,189,248,.22)'; ctx.strokeStyle = 'rgba(224,242,254,.9)'; ctx.lineWidth = 2.5;
     ctx.beginPath(); ctx.arc(0, 0, 25 + Math.sin(clock * 8) * 1.5, 0, 7); ctx.fill(); ctx.stroke();
@@ -910,6 +977,7 @@ function render(v, dt) {
     if (c === '#') drawWall(px, py, x === 0 || y === 0 || x === W - 1 || y === H - 1);
     else { drawFloor(px, py, x, y, y > 0 && g[i - W] === '#'); if (c === '+') drawCrate(px, py); }
   }
+  for (const [a, b, j] of (v.po || [])) { drawPortal(a, PORTAL_COLORS[j % 3]); drawPortal(b, PORTAL_COLORS[j % 3]); }
   for (const [i, t] of v.pu) drawPU(i, t);
   for (const [i, k, t] of v.f) drawFlame(i, k, t);
   for (const [x, y, f, fl, z, own] of v.b) {
@@ -935,7 +1003,7 @@ function render(v, dt) {
   for (const i of order) {
     const p = v.p[i];
     const rt = v.rt || roundTime;
-    const args = [i, disp[i].x, disp[i].y, p[2], p[3], p[4], p[5], i === mySlot, multi && i === mySlot && (v.ph === 'count' || (v.ph === 'play' && v.tm > rt - 2)), p[10], p[15], p[16], p[12] & 4];
+    const args = [i, disp[i].x, disp[i].y, p[2], p[3], p[4], p[5], i === mySlot, multi && i === mySlot && (v.ph === 'count' || (v.ph === 'play' && v.tm > rt - 2)), p[10], p[15], p[16], (p[12] & 4) ? (p[22] || 1) : 0];
     if (p[2] && p[19] > 0) { // invisible: faint to yourself (or on a shared screen), almost nothing to opponents
       const a = (mode === 'local' || i === mySlot) ? 0.35 : 0.05;
       const cx = disp[i].x * T + T / 2, cy = disp[i].y * T + T / 2;
@@ -963,13 +1031,13 @@ function render(v, dt) {
 let hudKey = '';
 function updateHUD(v) {
   const timer = v.tm > 0 ? `${Math.floor(Math.ceil(v.tm) / 60)}:${String(Math.ceil(v.tm) % 60).padStart(2, '0')}` : 'SD!';
-  const key = JSON.stringify([timer, v.names, v.wins, v.con, v.p.map(p => [p[2], p[6], p[7], p[8], p[9], p[10], p[11], p[12], p[13], p[14], p[15] > 0 ? Math.ceil(p[15]) : 0, p[16], p[17], Math.ceil(p[18] || 0), Math.ceil(p[19] || 0), p[20], p[21]])]);
+  const key = JSON.stringify([timer, v.names, v.wins, v.con, v.p.map(p => [p[2], p[6], p[7], p[8], p[9], p[10], p[11], p[12], p[13], p[14], p[15] > 0 ? Math.ceil(p[15]) : 0, p[16], p[17], Math.ceil(p[18] || 0), Math.ceil(p[19] || 0), p[20], p[21], Math.ceil(p[22] || 0)])]);
   if (key === hudKey) return; hudKey = key;
   const cards = v.names.map((n, i) => {
     const p = v.p[i];
     const stars = '★'.repeat(v.wins[i]) + '☆'.repeat(Math.max(0, WIN_TARGET - v.wins[i]));
     return `<div class="card ${p[2] ? '' : 'dead'}"><div class="nm"><span class="dot" style="background:${COLORS[i]}"></span>${esc(n)}${i === mySlot && mode !== 'local' ? ' (you)' : ''}${v.con[i] ? '' : ' ✖'}</div>
-      <div class="wins">${stars}</div><div class="st"><span><i class="emo">💣</i>${p[6]}</span><span><i class="emo">🔥</i>${p[7]}</span><span><i class="emo">⚡</i>${p[8]}</span>${p[9] ? '<span><i class="emo">👢</i></span>' : ''}${p[10] ? '<span><i class="emo">👻</i></span>' : ''}${p[11] ? `<span><i class="emo">🌀</i>${p[11]}</span>` : ''}${p[12] & 1 ? '<span><i class="emo">📡</i></span>' : ''}${p[12] & 2 ? '<span><i class="emo">🎯</i></span>' : ''}${p[12] & 4 ? '<span><i class="emo">🧱</i></span>' : ''}${p[12] & 8 ? '<span><i class="emo">➖</i></span>' : ''}${p[13] ? `<span><i class="emo">💥</i>${p[13]}</span>` : ''}${p[14] > 1 ? `<span><i class="emo">❤️</i>${p[14]}</span>` : ''}${p[15] > 0 && p[15] > HIT_INV ? `<span><i class="emo">🛡️</i>${Math.ceil(p[15])}</span>` : ''}${p[16] ? `<span style="color:#fb7185"><i class="emo">💀</i>${CURSE_LABEL[p[16]] || ''} ${p[17]}</span>` : ''}${p[20] & 1 ? '<span><i class="emo">🧤</i></span>' : ''}${p[20] & 2 ? '<span><i class="emo">⭐</i></span>' : ''}${p[21] ? `<span><i class="emo">🧨</i>${p[21]}</span>` : ''}${p[18] > 0 ? `<span style="color:#7dd3fc"><i class="emo">❄️</i>${Math.ceil(p[18])}</span>` : ''}${p[19] > 0 ? `<span><i class="emo">👁️</i>${Math.ceil(p[19])}</span>` : ''}</div></div>`;
+      <div class="wins">${stars}</div><div class="st"><span><i class="emo">💣</i>${p[6]}</span><span><i class="emo">🔥</i>${p[7]}</span><span><i class="emo">⚡</i>${p[8]}</span>${p[9] ? '<span><i class="emo">👢</i></span>' : ''}${p[10] ? '<span><i class="emo">👻</i></span>' : ''}${p[11] ? `<span><i class="emo">🌀</i>${p[11]}</span>` : ''}${p[12] & 1 ? '<span><i class="emo">📡</i></span>' : ''}${p[12] & 2 ? '<span><i class="emo">🎯</i></span>' : ''}${p[12] & 4 ? `<span><i class="emo">🧱</i>${Math.ceil(p[22] || 0)}</span>` : ''}${p[12] & 8 ? '<span><i class="emo">➖</i></span>' : ''}${p[13] ? `<span><i class="emo">💥</i>${p[13]}</span>` : ''}${p[14] > 1 ? `<span><i class="emo">❤️</i>${p[14]}</span>` : ''}${p[15] > 0 && p[15] > HIT_INV ? `<span><i class="emo">🛡️</i>${Math.ceil(p[15])}</span>` : ''}${p[16] ? `<span style="color:#fb7185"><i class="emo">💀</i>${CURSE_LABEL[p[16]] || ''} ${p[17]}</span>` : ''}${p[20] & 1 ? '<span><i class="emo">🧤</i></span>' : ''}${p[20] & 2 ? '<span><i class="emo">⭐</i></span>' : ''}${p[21] ? `<span><i class="emo">🧨</i>${p[21]}</span>` : ''}${p[18] > 0 ? `<span style="color:#7dd3fc"><i class="emo">❄️</i>${Math.ceil(p[18])}</span>` : ''}${p[19] > 0 ? `<span><i class="emo">👁️</i>${Math.ceil(p[19])}</span>` : ''}</div></div>`;
   });
   const half = Math.ceil(cards.length / 2);
   $('#hud').innerHTML = cards.slice(0, half).join('') + `<div class="timer ${v.tm <= 0 ? 'sd' : ''}">${timer}</div>` + cards.slice(half).join('');
