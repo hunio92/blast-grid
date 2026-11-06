@@ -52,6 +52,12 @@
   .seg button{flex:1;margin-top:0;padding:10px 4px;font-size:9px;background:transparent;color:var(--dim);border-color:var(--line);box-shadow:none}
   .seg button.on{background:var(--accent);color:#1a1205;border-color:#000;box-shadow:0 3px 0 #7c2d12}
   .mapinfo{font-size:10px;color:var(--accent);margin-top:10px}
+  .kgrid{display:grid;grid-template-columns:auto 1fr 1fr;gap:8px 10px;align-items:center;font-size:9px;margin-top:14px}
+  .kgrid .kh{color:var(--accent);text-align:center}
+  .kgrid .ka{color:var(--dim)}
+  .kgrid button{margin:0;padding:9px 4px;font-size:9px;background:#0b1020;color:var(--text);border-color:var(--line);box-shadow:none;text-transform:none}
+  .kgrid button.wait{border-color:var(--accent);color:var(--accent);animation:blink .8s steps(2) infinite}
+  @keyframes blink{50%{opacity:.4}}
 </style>
 </head>
 <body>
@@ -73,6 +79,7 @@
   </div>
   <div class="sep"></div>
   <button id="btnLocal" class="ghost">2 PLAYERS · SAME KEYBOARD</button>
+  <button id="btnKeys" class="ghost">⌨ CONTROLS</button>
   <div class="status" id="menuStatus"></div>
   <div class="hint legend">
     <b>POWER-UPS</b> (hidden in crates)<br>
@@ -80,7 +87,7 @@
     <i class="emo">👢</i> kick — walk into bombs to slide them<br>
     <i class="emo">🌀</i> +2 teleports — blink up to 4 tiles ahead, over walls<br>
     <i class="emo">👻</i> ghost — walk through bombs<br>
-    <i class="emo">📡</i> remote — detonate your bombs on demand (C / /)<br>
+    <i class="emo">📡</i> remote — detonate your bombs on demand (DETONATE key)<br>
     <i class="emo">🎯</i> pierce — blasts burn through crates<br>
     <i class="emo">🔥</i> MAX — full blast range &nbsp; <i class="emo">💥</i> power bomb — next bomb is max size<br>
     <i class="emo">🛡️</i> vest — 8s invincible &nbsp; <i class="emo">❤️</i> heart — survive one extra hit<br>
@@ -94,6 +101,16 @@
     <i class="emo">❄️</i> freeze — all opponents frozen for 2.5s<br>
     <i class="emo">⭐</i> star bomb — blasts also go diagonally &nbsp; <i class="emo">👁️</i> invisible — opponents can't see you for 8s
   </div>
+</div>
+
+<!-- CONTROLS -->
+<div id="keys" class="panel hidden">
+  <h1 style="font-size:22px">CONTROLS</h1>
+  <div class="hint" style="margin-top:0;text-align:center">Click a key, then press the new one (ESC cancels).<br>Saved in this browser only — your colleague sets their own.</div>
+  <div class="kgrid" id="kgrid"></div>
+  <div class="hint">Online: both columns control your player. Same keyboard: left column is P1, right column is P2.<br>M (sound) and R (rematch) are reserved.</div>
+  <div class="status" id="keysStatus"></div>
+  <div class="row"><button id="btnKeysReset" class="ghost">RESET DEFAULTS</button><button id="btnKeysDone" style="flex:1">DONE</button></div>
 </div>
 
 <!-- LOBBY -->
@@ -605,10 +622,34 @@ function snapshot() {
 }
 
 // ================== INPUT ==================
-const KEYMAP = {
+const DEFAULT_KEYS = {
   a: { up: ['KeyW'], down: ['KeyS'], left: ['KeyA'], right: ['KeyD'], bomb: ['Space', 'KeyF'], tele: ['KeyE', 'KeyQ'], det: ['KeyC', 'KeyV'] },
   b: { up: ['ArrowUp'], down: ['ArrowDown'], left: ['ArrowLeft'], right: ['ArrowRight'], bomb: ['Enter', 'NumpadEnter', 'Numpad0'], tele: ['ShiftRight', 'ControlRight', 'Numpad1'], det: ['Slash', 'Numpad2', 'Period'] },
 };
+const ACTIONS = [['up', 'UP'], ['down', 'DOWN'], ['left', 'LEFT'], ['right', 'RIGHT'], ['bomb', 'BOMB'], ['tele', 'TELEPORT'], ['det', 'DETONATE']];
+const RESERVED = ['KeyM', 'KeyR', 'Escape', 'Tab', 'F5'];
+const KEYMAP = JSON.parse(JSON.stringify(DEFAULT_KEYS));
+try {
+  const saved = JSON.parse(localStorage.getItem('bg-keys') || 'null');
+  if (saved) for (const set of ['a', 'b']) for (const [act] of ACTIONS) {
+    const v = saved[set] && saved[set][act];
+    if (Array.isArray(v) && v.every(c => typeof c === 'string')) KEYMAP[set][act] = v.filter(c => !RESERVED.includes(c));
+  }
+} catch (e) { }
+function saveKeys() { try { localStorage.setItem('bg-keys', JSON.stringify(KEYMAP)); } catch (e) { } }
+function keyName(c) {
+  const map = { Space: 'SPACE', ArrowUp: '↑', ArrowDown: '↓', ArrowLeft: '←', ArrowRight: '→', Enter: 'ENTER', NumpadEnter: 'NUM ENTER',
+    ShiftLeft: 'L-SHIFT', ShiftRight: 'R-SHIFT', ControlLeft: 'L-CTRL', ControlRight: 'R-CTRL', AltLeft: 'L-ALT', AltRight: 'R-ALT',
+    Slash: '/', Period: '.', Comma: ',', Semicolon: ';', Quote: "'", BracketLeft: '[', BracketRight: ']', Backslash: '\\',
+    Minus: '-', Equal: '=', Backquote: '`', Backspace: 'BKSP', CapsLock: 'CAPS', IntlBackslash: '\\' };
+  if (map[c]) return map[c];
+  if (c.startsWith('Key')) return c.slice(3);
+  if (c.startsWith('Digit')) return c.slice(5);
+  if (c.startsWith('Numpad')) return 'NUM ' + c.slice(6).replace('Add', '+').replace('Subtract', '-').replace('Multiply', '*').replace('Divide', '/').replace('Decimal', '.');
+  return c.toUpperCase();
+}
+const keysLabel = (set, act) => KEYMAP[set][act].length ? KEYMAP[set][act].map(keyName).join(' · ') : '—';
+const firstKey = (set, act) => KEYMAP[set][act].length ? keyName(KEYMAP[set][act][0]) : '—';
 const keys = new Set();
 const localIn = [{ bombSeq: 0, teleSeq: 0, detSeq: 0, pri: 'h' }, { bombSeq: 0, teleSeq: 0, detSeq: 0, pri: 'h' }];
 let lastSent = '';
@@ -632,6 +673,45 @@ function sendGuestInput() {
   const s = JSON.stringify(k);
   if (s !== lastSent) { lastSent = s; hostConn.send({ t: 'in', k }); }
 }
+
+// ---- key rebinding screen ----
+let rebinding = null; // { set, act, btn }
+function renderKeys() {
+  const g = $('#kgrid'); g.innerHTML = '<div></div><div class="kh">PLAYER 1</div><div class="kh">PLAYER 2</div>';
+  for (const [act, label] of ACTIONS) {
+    const l = document.createElement('div'); l.className = 'ka'; l.textContent = label; g.appendChild(l);
+    for (const set of ['a', 'b']) {
+      const b = document.createElement('button'); b.textContent = keysLabel(set, act);
+      b.onclick = () => {
+        if (rebinding) rebinding.btn.classList.remove('wait');
+        rebinding = { set, act, btn: b }; b.textContent = 'PRESS A KEY…'; b.classList.add('wait'); $('#keysStatus').textContent = '';
+      };
+      g.appendChild(b);
+    }
+  }
+}
+function finishRebind(code) {
+  const { set, act } = rebinding; rebinding = null;
+  if (code && RESERVED.includes(code)) { $('#keysStatus').textContent = keyName(code) + ' is reserved — pick another key'; renderKeys(); return; }
+  if (code) {
+    for (const s of ['a', 'b']) for (const [a] of ACTIONS) KEYMAP[s][a] = KEYMAP[s][a].filter(c => c !== code); // a key does one thing
+    KEYMAP[set][act] = [code]; saveKeys();
+    $('#keysStatus').textContent = '';
+  }
+  renderKeys();
+}
+addEventListener('keydown', e => {
+  if (!rebinding) return;
+  e.preventDefault(); e.stopImmediatePropagation();
+  finishRebind(e.code === 'Escape' ? null : e.code);
+}, true);
+$('#btnKeys').onclick = () => { rebinding = null; $('#keysStatus').textContent = ''; renderKeys(); show('keys'); };
+$('#btnKeysDone').onclick = () => { rebinding = null; show('menu'); };
+$('#btnKeysReset').onclick = () => {
+  rebinding = null;
+  for (const s of ['a', 'b']) for (const [a] of ACTIONS) KEYMAP[s][a] = DEFAULT_KEYS[s][a].slice();
+  saveKeys(); $('#keysStatus').textContent = ''; renderKeys();
+};
 
 let muted = false;
 addEventListener('keydown', e => {
@@ -1076,7 +1156,7 @@ renderSizeSeg();
 function applyMapSize() { const z = SIZES[mapSize]; setSize(z.w, z.h); roundTime = z.time; }
 setSize(SIZES[mapSize].w, SIZES[mapSize].h);
 
-function show(id) { for (const s of ['menu', 'lobby', 'game']) $('#' + s).classList.toggle('hidden', s !== id); }
+function show(id) { for (const s of ['menu', 'keys', 'lobby', 'game']) $('#' + s).classList.toggle('hidden', s !== id); }
 function getName() {
   const n = ($('#name').value.trim() || 'Player').slice(0, 12);
   myName = n; try { localStorage.setItem('bg-name', n); } catch (e) { }
@@ -1096,9 +1176,9 @@ function toMenu(msg) { resetAll(); show('menu'); menuStatus(msg); }
 
 function enterGame() {
   show('game'); started = true; hudKey = ''; disp.length = 0; acc = 0; lastT = performance.now();
-  $('#controls').textContent = mode === 'local'
-    ? 'P1: WASD · SPACE bomb · E teleport · C detonate   |   P2: ARROWS · ENTER bomb · R-SHIFT teleport · / detonate'
-    : 'MOVE: WASD / ARROWS · BOMB: SPACE / ENTER · TELEPORT: E / R-SHIFT · DETONATE: C / /';
+  const mv = s => ['up', 'left', 'down', 'right'].map(a => firstKey(s, a)).join('');
+  const line = s => `${mv(s)} · ${firstKey(s, 'bomb')} bomb · ${firstKey(s, 'tele')} teleport · ${firstKey(s, 'det')} detonate`;
+  $('#controls').textContent = mode === 'local' ? `P1: ${line('a')}   |   P2: ${line('b')}` : `${line('a')}   |   ${line('b')}`;
 }
 
 // ---- Local ----
