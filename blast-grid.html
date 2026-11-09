@@ -135,6 +135,7 @@
   <canvas id="cv"></canvas>
   <div id="foot">
     <span id="controls"></span>
+    <span id="net"></span>
     <span>M: SOUND</span>
     <button id="btnQuit" class="ghost">QUIT</button>
   </div>
@@ -156,7 +157,7 @@ const COLORS = ['#f8fafc', '#38bdf8', '#fb7185', '#a3e635'];
 const DARK   = ['#94a3b8', '#0369a1', '#be123c', '#4d7c0f'];
 const spawnPoints = () => [[1, 1], [W - 2, H - 2], [W - 2, 1], [1, H - 2]];
 const FUSE = 2.4, FLAME_T = 0.55, WIN_TARGET = 3, MAX_PLAYERS = 4;
-const ID_PREFIX = 'blastgrid-v4-'; // bump when the network format changes so old and new versions don't mix
+const ID_PREFIX = 'blastgrid-v5-'; // bump when the network format changes so old and new versions don't mix
 const idx = (x, y) => y * W + x;
 const $ = s => document.querySelector(s);
 
@@ -169,6 +170,10 @@ let mySlot = 0;
 let inputs = [];            // per-slot inputs used by sim
 let localEv = [], netEv = [];
 let peer = null, conns = [], hostConn = null, started = false;
+let netSeq = 0, lastSnapQ = -1, lastSnapAt = 0, inSeq = 0, myPing = 0, myRelay = false, joinedLate = false;
+// Online messages go over an UNORDERED (but still delivered) channel with JSON encoding: a single lost packet no
+// longer holds back every later snapshot, and JSON is much cheaper to encode than PeerJS's default binary packer.
+const CONN_OPTS = { reliable: false, serialization: 'json' };
 let myName = 'Player';
 try { myName = localStorage.getItem('bg-name') || 'Player'; } catch (e) {}
 $('#name').value = myName === 'Player' ? '' : myName;
@@ -231,16 +236,21 @@ function newRound() {
   }
   S = {
     grid, hidden, pu: new Map(), bombs: [], flames: new Map(), fx: [], portals, portalAt: new Map(portals.flatMap(([a, b]) => [[a, b], [b, a]])),
-    players: M.players.map((pl, i) => ({
-      slot: i, x: SPAWNS[i][0], y: SPAWNS[i][1], alive: pl.connected !== false, dir: 'd', walk: 0,
-      maxBombs: 1, range: 2, speed: 0, kick: false, ghost: false, tele: 0, bombsOut: 0, deathT: 9,
-      remote: false, pierce: false, softT: 0, line: false, power: 0, hp: 1, inv: 0, curse: '', curseT: 0, autoT: 0,
-      glove: false, star: false, mines: 0, frozen: 0, invis: 0, portalLock: -1,
-      lastSeq: (inputs[i] && inputs[i].bombSeq) || 0, lastTele: (inputs[i] && inputs[i].teleSeq) || 0, lastDet: (inputs[i] && inputs[i].detSeq) || 0,
-    })),
+    players: M.players.map((pl, i) => makePlayer(i, pl.connected !== false)),
     phase: 'count', t: 3, time: roundTime, spiral: buildSpiral(), sdT: 0, banner: '',
   };
   S.sdStep = Math.min(0.14, 24 / (S.spiral.length * 0.75)); // sudden death takes ~24s whatever the map size
+}
+
+function makePlayer(i, alive) {
+  const sp = spawnPoints()[i];
+  return {
+    slot: i, x: sp[0], y: sp[1], alive, dir: 'd', walk: 0,
+    maxBombs: 1, range: 2, speed: 0, kick: false, ghost: false, tele: 0, bombsOut: 0, deathT: 9,
+    remote: false, pierce: false, softT: 0, line: false, power: 0, hp: 1, inv: 0, curse: '', curseT: 0, autoT: 0,
+    glove: false, star: false, mines: 0, frozen: 0, invis: 0, portalLock: -1,
+    lastSeq: (inputs[i] && inputs[i].bombSeq) || 0, lastTele: (inputs[i] && inputs[i].teleSeq) || 0, lastDet: (inputs[i] && inputs[i].detSeq) || 0,
+  };
 }
 
 function ev(e) { localEv.push(e); netEv.push(e); }
@@ -667,7 +677,7 @@ function sendGuestInput() {
   const st = dirState(0);
   const k = { up: st.up, down: st.down, left: st.left, right: st.right, pri: st.pri, bombSeq: st.bombSeq, teleSeq: st.teleSeq, detSeq: st.detSeq };
   const s = JSON.stringify(k);
-  if (s !== lastSent) { lastSent = s; hostConn.send({ t: 'in', k }); }
+  if (s !== lastSent) { lastSent = s; k.q = ++inSeq; hostConn.send({ t: 'in', k }); } // q: host ignores inputs that arrive out of order
 }
 
 // ---- key rebinding screen ----
@@ -1099,6 +1109,7 @@ function render(v, dt) {
   if (v.ph === 'count') bigText(String(Math.max(1, Math.ceil(v.ct))), '#ffb020');
   else if (v.ph === 'play' && v.tm > (v.rt || roundTime) - 0.7) bigText('GO!', '#a3e635');
   else if (v.ph === 'round') banner(v.ban, 'Next round starting…');
+  else if (mode === 'guest' && joinedLate && v.ph !== 'match') banner('YOU JOINED', 'You\'ll play from the next round — watch for now', '#38bdf8');
   else if (v.ph === 'match') banner(v.ban, mode === 'guest' ? 'Waiting for the host to start a rematch…' : 'Press R for a rematch');
   if ((v.ph === 'play' || v.ph === 'grace') && v.tm <= 0 && v.tm > -2) banner('SUDDEN DEATH!', null, '#fb7185');
   updateHUD(v);
@@ -1130,10 +1141,61 @@ function simStep() {
     while (acc >= 1 / 60) { tick(1 / 60); acc -= 1 / 60; }
     view = snapshot();
     playEvents(localEv.splice(0));
-    if (mode === 'host' && (sendTick++ % 2 === 0)) broadcast({ ...view, ev: netEv.splice(0) });
+    if (mode === 'host' && (sendTick++ % 2 === 0)) broadcast({ ...view, ev: netEv.splice(0), q: netSeq++ });
   }
 }
-setInterval(simStep, 1000 / 60);
+// The simulation is driven from a Web Worker timer: browsers slow normal timers in a hidden/minimized tab to about
+// once a second, which used to freeze the game for everyone when the host switched to another window.
+try {
+  const w = new Worker(URL.createObjectURL(new Blob(['setInterval(() => postMessage(0), 1000 / 60);'], { type: 'text/javascript' })));
+  let n = 0;
+  w.onmessage = () => { simStep(); if (++n % 60 === 0) netTick(); }; // netTick on the same un-throttled clock
+} catch (e) { setInterval(simStep, 1000 / 60); setInterval(() => netTick(), 1000); }
+
+// ---- connection quality (ping + direct/relay) ----
+function netTick() {
+  const now = performance.now();
+  if (mode === 'guest' && hostConn && hostConn.open) hostConn.send({ t: 'ping', c: now });
+  if (mode === 'host') for (const c of conns.slice()) {
+    if (c.seen && now - c.seen > 5000) { try { c.conn.close(); } catch (e) { } dropConn(c); continue; } // silent for 5s: treat as left
+    if (c.open && c.conn.open) c.conn.send({ t: 'ping', c: now });
+  }
+  if (mode === 'guest' && started && performance.now() - lastSnapAt > 10000) toMenu('Lost the connection to the host.');
+  if (started) updateNet();
+}
+setInterval(() => {
+  const check = (conn, set) => {
+    const pc = conn && conn.peerConnection; if (!pc || !pc.getStats) return;
+    pc.getStats().then(st => {
+      let pair = null;
+      st.forEach(r => { if (r.type === 'transport' && r.selectedCandidatePairId) pair = st.get(r.selectedCandidatePairId); });
+      if (!pair) st.forEach(r => { if (r.type === 'candidate-pair' && r.nominated && r.state === 'succeeded') pair = r; });
+      if (!pair) return;
+      const l = st.get(pair.localCandidateId), r = st.get(pair.remoteCandidateId);
+      set((l && l.candidateType === 'relay') || (r && r.candidateType === 'relay'));
+    }).catch(() => { });
+  };
+  if (mode === 'guest') check(hostConn, v => myRelay = v);
+  if (mode === 'host') for (const c of conns) check(c.conn, v => c.relay = v);
+}, 3000);
+// Closing/reloading the tab tells the other side right away instead of waiting for WebRTC to time out.
+addEventListener('pagehide', () => {
+  try { if (mode === 'guest' && hostConn && hostConn.open) hostConn.send({ t: 'bye' }); } catch (e) { }
+  try { if (mode === 'host') for (const c of conns) if (c.conn.open) c.conn.send({ t: 'bye' }); } catch (e) { }
+});
+function onPing(conn, d) { if (d.t === 'ping') { conn.send({ t: 'pong', c: d.c }); return true; } return false; }
+function updateNet() {
+  const el = $('#net'); if (!el) return;
+  const q = ms => ms < 80 ? '#a3e635' : ms < 160 ? '#ffb020' : '#fb7185';
+  if (mode === 'guest') {
+    const stall = performance.now() - lastSnapAt > 600;
+    el.innerHTML = stall ? '<span style="color:#fb7185">⚠ NO DATA FROM HOST</span>'
+      : `<span style="color:${q(myPing)}">PING ${Math.round(myPing)}ms</span>${myRelay ? ' <span style="color:#fb7185">· RELAYED</span>' : ''}`;
+  } else if (mode === 'host') {
+    el.innerHTML = conns.filter(c => c.open && c.slot >= 0).map(c =>
+      `<span style="color:${q(c.ping || 0)}">${esc(c.name)} ${Math.round(c.ping || 0)}ms</span>${c.relay ? ' <span style="color:#fb7185">RELAYED</span>' : ''}`).join(' · ');
+  } else el.textContent = '';
+}
 let lastR = performance.now();
 function frame(now) {
   const dt = Math.min(0.1, (now - lastR) / 1000); lastR = now;
@@ -1166,7 +1228,8 @@ function resetAll() {
   conns.forEach(c => { try { c.conn.close(); } catch (e) { } }); conns = [];
   if (hostConn) { try { hostConn.close(); } catch (e) { } hostConn = null; }
   if (peer) { try { peer.destroy(); } catch (e) { } peer = null; }
-  keys.clear(); inputs = [];
+  keys.clear(); inputs = []; myPing = 0; myRelay = false; joinedLate = false; lastSnapQ = -1;
+  const n = $('#net'); if (n) n.textContent = '';
 }
 function toMenu(msg) { resetAll(); show('menu'); menuStatus(msg); }
 
@@ -1213,28 +1276,61 @@ function startHostPeer(tries = 0) {
     if (mode === 'host') lobbyStatus(peerErrorText(err));
   });
   peer.on('connection', conn => {
-    const entry = { conn, name: 'Guest', slot: -1, open: false };
+    const entry = { conn, name: 'Guest', slot: -1, open: false, inQ: 0, ping: 0 };
+    const reject = why => { conn.send({ t: 'reject', why }); setTimeout(() => conn.close(), 300); };
     conn.on('open', () => {
-      if (started || conns.filter(c => c.open).length >= MAX_PLAYERS - 1) {
-        conn.send({ t: 'reject', why: started ? 'Game already in progress — wait for the host to return to the lobby.' : 'Room is full.' });
-        setTimeout(() => conn.close(), 300); return;
-      }
-      entry.open = true; conns.push(entry); renderLobby();
+      if (!started && conns.filter(c => c.open).length >= MAX_PLAYERS - 1) { reject('Room is full.'); return; }
+      entry.open = true; conns.push(entry);
+      if (!started) renderLobby(); // mid-game joiners are placed once their name arrives (hello)
     });
     conn.on('data', d => {
       if (!d || typeof d !== 'object') return;
-      if (d.t === 'hello') { entry.name = String(d.name || 'Guest').slice(0, 12); renderLobby(); }
-      else if (d.t === 'in' && entry.slot >= 0 && d.k) inputs[entry.slot] = d.k;
-    });
-    conn.on('close', () => {
-      entry.open = false; conns = conns.filter(c => c !== entry);
-      if (started && entry.slot >= 0 && M && M.players[entry.slot]) {
-        M.players[entry.slot].connected = false;
-        if (S && S.players[entry.slot]) kill(S.players[entry.slot]);
+      entry.seen = performance.now();
+      if (d.t === 'bye') { conn.close(); dropConn(entry); return; }
+      if (onPing(conn, d)) return;
+      if (d.t === 'pong') { entry.ping = performance.now() - d.c; return; }
+      if (d.t === 'hello') {
+        entry.name = String(d.name || 'Guest').slice(0, 12);
+        if (!started) renderLobby();
+        else if (entry.slot < 0 && !hotJoin(entry)) { entry.open = false; conns = conns.filter(c => c !== entry); reject('Room is full.'); }
       }
-      if (!started) renderLobby();
+      else if (d.t === 'in' && entry.slot >= 0 && d.k) {
+        if (typeof d.k.q === 'number') { if (d.k.q < entry.inQ) return; entry.inQ = d.k.q; } // drop stale, out-of-order input
+        inputs[entry.slot] = d.k;
+      }
     });
+    conn.on('close', () => dropConn(entry));
   });
+}
+// Hot join: someone connects while a match is running. They take a free (left) slot — getting their old score back
+// if they rejoin under the same name — or a new slot, and play from the next round (immediately during the countdown).
+function hotJoin(entry) {
+  if (!M) return false;
+  const taken = i => i === 0 || conns.some(c => c !== entry && c.open && c.slot === i);
+  const free = M.players.map((pl, i) => i).filter(i => !taken(i) && M.players[i].connected === false);
+  let slot = free.find(i => M.players[i].name === entry.name);
+  const back = slot !== undefined;
+  if (!back) slot = free.length ? free[0] : M.players.length < MAX_PLAYERS ? M.players.length : -1;
+  if (slot < 0) return false;
+  M.players[slot] = { name: entry.name, wins: back ? M.players[slot].wins : 0 };
+  entry.slot = slot; inputs[slot] = undefined;
+  if (S) {
+    const now = S.phase === 'count';
+    S.players[slot] = makePlayer(slot, now);
+  }
+  entry.conn.send({ t: 'start', slot, late: !(S && S.phase === 'count') });
+  hudKey = '';
+  return true;
+}
+// A guest is gone (closed the tab, lost the network, or said bye): free their slot so they can hot-join back.
+function dropConn(entry) {
+  if (entry.gone) return; entry.gone = true;
+  entry.open = false; conns = conns.filter(c => c !== entry);
+  if (started && entry.slot >= 0 && M && M.players[entry.slot]) {
+    M.players[entry.slot].connected = false;
+    if (S && S.players[entry.slot]) kill(S.players[entry.slot]);
+  }
+  if (!started) renderLobby();
 }
 function broadcast(msg) { for (const c of conns) if (c.open && c.conn.open) { try { c.conn.send(msg); } catch (e) { } } }
 function lobbyPlayers() { return [{ name: myName }].concat(conns.filter(c => c.open).map(c => ({ name: c.name }))); }
@@ -1279,7 +1375,7 @@ $('#btnJoin').onclick = () => {
   peer = new Peer();
   peer.on('error', err => { if (mode === 'guest') toMenu(peerErrorText(err)); });
   peer.on('open', () => {
-    hostConn = peer.connect(ID_PREFIX + code, { reliable: true });
+    hostConn = peer.connect(ID_PREFIX + code, CONN_OPTS);
     const timeout = setTimeout(() => { if (mode === 'guest' && !(hostConn && hostConn.open)) toMenu('Could not connect. The host may be behind a strict firewall — try another network.'); }, 15000);
     hostConn.on('open', () => {
       clearTimeout(timeout);
@@ -1289,10 +1385,20 @@ $('#btnJoin').onclick = () => {
     });
     hostConn.on('data', d => {
       if (!d || typeof d !== 'object') return;
+      if (onPing(hostConn, d)) return;
+      if (d.t === 'pong') { const r = performance.now() - d.c; myPing = myPing ? myPing * 0.6 + r * 0.4 : r; return; }
       if (d.t === 'reject') toMenu(d.why);
+      else if (d.t === 'bye') toMenu('The host closed the game.');
       else if (d.t === 'lobby') { renderLobby(d.players.map(n => ({ name: n }))); $('#lobbyMap').textContent = d.size ? 'MAP: ' + d.size : ''; lobbyStatus('Waiting for the host to start…'); }
-      else if (d.t === 'start') { mySlot = d.slot; localIn[0].bombSeq = 0; localIn[0].teleSeq = 0; localIn[0].detSeq = 0; lastSent = ''; view = null; enterGame(); sendGuestInput(); }
-      else if (d.t === 's') { if (d.w && (d.w !== W || d.h !== H)) setSize(d.w, d.h); view = d; if (d.ev) playEvents(d.ev); }
+      else if (d.t === 'start') { mySlot = d.slot; joinedLate = !!d.late; localIn[0].bombSeq = 0; localIn[0].teleSeq = 0; localIn[0].detSeq = 0; lastSent = ''; lastSnapQ = -1; lastSnapAt = performance.now(); view = null; enterGame(); sendGuestInput(); }
+      else if (d.t === 's') {
+        if (d.ev) playEvents(d.ev);
+        if (typeof d.q === 'number') { if (d.q <= lastSnapQ) return; lastSnapQ = d.q; } // an older snapshot arrived late: skip it
+        lastSnapAt = performance.now();
+        if (d.w && (d.w !== W || d.h !== H)) setSize(d.w, d.h);
+        view = d;
+        if (joinedLate && d.p[mySlot] && d.p[mySlot][2]) joinedLate = false;
+      }
     });
     hostConn.on('close', () => { if (mode === 'guest') toMenu('The host closed the game.'); });
   });
