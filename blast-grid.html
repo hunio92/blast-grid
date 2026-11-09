@@ -98,7 +98,6 @@
     <b>NEW</b><br>
     <i class="emo">🧤</i> glove — press BOMB while standing on (or facing) a bomb to throw it over walls<br>
     <i class="emo">🧨</i> +2 mines — your next drops are hidden mines that trigger on opponents<br>
-    <i class="emo">❄️</i> freeze — all opponents frozen for 2.5s<br>
     <i class="emo">⭐</i> star bomb — blasts also go diagonally &nbsp; <i class="emo">👁️</i> invisible — opponents can't see you for 8s
   </div>
 </div>
@@ -189,10 +188,11 @@ function buildSpiral() {
 
 // b bomb+  f fire+  s skate  k kick  t teleport  g bomb-pass(ghost)
 // r remote control  p pierce bomb  u full fire  v vest  h heart  w soft-block pass  l line bomb  m power bomb  x skull (curse)
-const PU_TABLE = [['b', 22], ['f', 22], ['s', 12], ['k', 8], ['t', 8], ['g', 6],
-  ['r', 6], ['p', 6], ['u', 3], ['v', 5], ['h', 4], ['w', 4], ['l', 4], ['m', 3], ['x', 6],
-  ['d', 4], ['n', 4], ['e', 4], // d fire down  n bomb down  e speed down (Geta)
-  ['o', 8], ['j', 4], ['z', 3], ['y', 4], ['i', 3]]; // o glove  j mines  z freeze  y star bomb  i invisibility
+// d fire down  n bomb down  e speed down  o glove  j mines  y star bomb  i invisibility
+// Basic stat-ups are a bit more common; every special ability has the same chance; the bad items are rarer.
+const PU_TABLE = [['b', 10], ['f', 10], ['s', 7],
+  ...['k', 't', 'g', 'r', 'p', 'u', 'v', 'h', 'w', 'l', 'm', 'x', 'o', 'j', 'y', 'i'].map(t => [t, 5]),
+  ['d', 3], ['n', 3], ['e', 3]];
 const PU_TOTAL = PU_TABLE.reduce((a, [, w]) => a + w, 0);
 function randPU() { let r = Math.random() * PU_TOTAL; for (const [t, w] of PU_TABLE) if ((r -= w) < 0) return t; return 'b'; }
 const MAX_RANGE = 8, REMOTE_FUSE = 8, VEST_TIME = 8, HIT_INV = 1.5, CURSE_TIME = 10, FREEZE_TIME = 2.5, INVIS_TIME = 8, MINE_ARM = 1.0;
@@ -589,10 +589,6 @@ function tick(dt) {
       if (t === 'j') p.mines = Math.min(5, p.mines + 2);
       if (t === 'y') p.star = true;
       if (t === 'i') p.invis = INVIS_TIME;
-      if (t === 'z') {
-        for (const q of S.players) if (q !== p && q.alive) { q.frozen = FREEZE_TIME; S.fx.push({ x: Math.round(q.x), y: Math.round(q.y), t: 0.5, c: q.slot }); }
-        ev('freeze');
-      }
       if (t === 'x') { p.curse = CURSES[Math.random() * CURSES.length | 0]; p.curseT = CURSE_TIME; p.autoT = 0; }
     }
   }
