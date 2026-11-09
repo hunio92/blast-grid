@@ -58,6 +58,13 @@
   .kgrid button{margin:0;padding:9px 4px;font-size:9px;background:#0b1020;color:var(--text);border-color:var(--line);box-shadow:none;text-transform:none}
   .kgrid button.wait{border-color:var(--accent);color:var(--accent);animation:blink .8s steps(2) infinite}
   @keyframes blink{50%{opacity:.4}}
+  #pups{width:min(920px,100%)}
+  .pu-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:6px;font-size:9px;margin-top:10px;max-height:calc(100vh - 220px);overflow:auto;scrollbar-color:var(--line) transparent}
+  .pu-h{font-size:10px;margin-top:8px;grid-column:1/-1}
+  .pu-r{display:grid;grid-template-columns:24px 100px 1fr;gap:8px;align-items:center;padding:6px 8px;border:2px solid var(--line);border-radius:6px;line-height:1.6}
+  .pu-r b{color:var(--text);font-weight:normal}
+  .pu-r span:last-child{color:var(--dim)}
+  .pu-i .emo{font-size:16px}
 </style>
 </head>
 <body>
@@ -79,27 +86,41 @@
   </div>
   <div class="sep"></div>
   <button id="btnLocal" class="ghost">2 PLAYERS · SAME KEYBOARD</button>
-  <button id="btnKeys" class="ghost">⌨ CONTROLS</button>
+  <div class="row"><button id="btnKeys" class="ghost" style="flex:1"><i class="emo">⌨️</i> CONTROLS</button><button id="btnPU" class="ghost" style="flex:1"><i class="emo">💣</i> POWER-UPS</button></div>
   <div class="status" id="menuStatus"></div>
-  <div class="hint legend">
-    <b>POWER-UPS</b> (hidden in crates)<br>
-    <i class="emo">💣</i> +1 bomb &nbsp; <i class="emo">🔥</i> bigger blast &nbsp; <i class="emo">⚡</i> speed<br>
-    <i class="emo">👢</i> kick — walk into bombs to slide them<br>
-    <i class="emo">🌀</i> +2 teleports — blink up to 4 tiles ahead, over walls<br>
-    <i class="emo">👻</i> ghost — walk through bombs<br>
-    <i class="emo">📡</i> remote — detonate your bombs on demand (DETONATE key)<br>
-    <i class="emo">🎯</i> pierce — blasts burn through crates<br>
-    <i class="emo">🔥</i> MAX — full blast range &nbsp; <i class="emo">💥</i> power bomb — next bomb is max size<br>
-    <i class="emo">🛡️</i> vest — 8s invincible &nbsp; <i class="emo">❤️</i> heart — survive one extra hit<br>
-    <i class="emo">🧱</i> wall pass — walk through crates for 5s &nbsp; <i class="emo">➖</i> line bomb — drops all bombs in a row<br>
-    <span style="color:#fb7185">BAD:</span> red ↓ items shrink your blast, bomb count or speed (min 1 / 1 / −3)<br>
-    <i class="emo">💀</i> skull — random curse for 10s (slow, rush, no bombs, auto bombs, weak, reversed)<br>
-    <b>MAP</b> <i class="emo">🕳️</i> teleport holes come in colored pairs — step in one, pop out of the other<br>
-    <b>NEW</b><br>
-    <i class="emo">🧤</i> glove — press BOMB while standing on (or facing) a bomb to throw it over walls<br>
-    <i class="emo">🧨</i> +2 mines — your next drops are hidden mines that trigger on opponents<br>
-    <i class="emo">⭐</i> star bomb — blasts also go diagonally &nbsp; <i class="emo">👁️</i> invisible — opponents can't see you for 8s
+</div>
+
+<!-- POWER-UPS -->
+<div id="pups" class="panel hidden">
+  <h1 style="font-size:22px">POWER-UPS</h1>
+  <div class="hint" style="margin-top:0;text-align:center">Hidden in crates — blow them up to find them.</div>
+  <div class="pu-list">
+    <div class="pu-h" style="color:var(--accent)">GOOD</div>
+    <div class="pu-r"><span class="pu-i"><i class="emo">💣</i></span><b>+1 BOMB</b><span>drop one more bomb at a time</span></div>
+    <div class="pu-r"><span class="pu-i"><i class="emo">🔥</i></span><b>FIRE</b><span>bigger blast</span></div>
+    <div class="pu-r"><span class="pu-i"><i class="emo">⚡</i></span><b>SPEED</b><span>walk faster</span></div>
+    <div class="pu-r"><span class="pu-i"><i class="emo">🔥</i></span><b>MAX FIRE</b><span>full blast range</span></div>
+    <div class="pu-r"><span class="pu-i"><i class="emo">💥</i></span><b>POWER BOMB</b><span>next bomb is max size</span></div>
+    <div class="pu-r"><span class="pu-i"><i class="emo">👢</i></span><b>KICK</b><span>walk into bombs to slide them</span></div>
+    <div class="pu-r"><span class="pu-i"><i class="emo">🧤</i></span><b>GLOVE</b><span>BOMB while on / facing a bomb throws it over walls</span></div>
+    <div class="pu-r"><span class="pu-i"><i class="emo">🌀</i></span><b>TELEPORT ×2</b><span>blink up to 4 tiles ahead, over walls</span></div>
+    <div class="pu-r"><span class="pu-i"><i class="emo">👻</i></span><b>GHOST</b><span>walk through bombs</span></div>
+    <div class="pu-r"><span class="pu-i"><i class="emo">🧱</i></span><b>WALL PASS</b><span>walk through crates for 5s</span></div>
+    <div class="pu-r"><span class="pu-i"><i class="emo">📡</i></span><b>REMOTE</b><span>set off your bombs with DETONATE</span></div>
+    <div class="pu-r"><span class="pu-i"><i class="emo">🎯</i></span><b>PIERCE</b><span>blasts burn through crates</span></div>
+    <div class="pu-r"><span class="pu-i"><i class="emo">➖</i></span><b>LINE BOMB</b><span>drops all your bombs in a row</span></div>
+    <div class="pu-r"><span class="pu-i"><i class="emo">⭐</i></span><b>STAR BOMB</b><span>blasts also go diagonally</span></div>
+    <div class="pu-r"><span class="pu-i"><i class="emo">🧨</i></span><b>MINES ×2</b><span>next drops are hidden mines</span></div>
+    <div class="pu-r"><span class="pu-i"><i class="emo">🛡️</i></span><b>VEST</b><span>8s invincible</span></div>
+    <div class="pu-r"><span class="pu-i"><i class="emo">❤️</i></span><b>HEART</b><span>survive one extra hit</span></div>
+    <div class="pu-r"><span class="pu-i"><i class="emo">👁️</i></span><b>INVISIBLE</b><span>opponents can't see you for 8s</span></div>
+    <div class="pu-h" style="color:#fb7185">BAD</div>
+    <div class="pu-r"><span class="pu-i"><span style="color:#fb7185">↓</span></span><b>DOWN ITEMS</b><span>red ↓ fire, bomb or speed: lose one</span></div>
+    <div class="pu-r"><span class="pu-i"><i class="emo">💀</i></span><b>SKULL</b><span>random curse for 10s</span></div>
+    <div class="pu-h" style="color:#38bdf8">MAP</div>
+    <div class="pu-r"><span class="pu-i"><i class="emo">🕳️</i></span><b>TELEPORT HOLES</b><span>colored pairs — step in one, pop out of the other</span></div>
   </div>
+  <button id="btnPUDone">BACK</button>
 </div>
 
 <!-- CONTROLS -->
@@ -712,6 +733,8 @@ addEventListener('keydown', e => {
   finishRebind(e.code === 'Escape' ? null : e.code);
 }, true);
 $('#btnKeys').onclick = () => { rebinding = null; $('#keysStatus').textContent = ''; renderKeys(); show('keys'); };
+$('#btnPU').onclick = () => show('pups');
+$('#btnPUDone').onclick = () => show('menu');
 $('#btnKeysDone').onclick = () => { rebinding = null; show('menu'); };
 $('#btnKeysReset').onclick = () => {
   rebinding = null;
@@ -1214,7 +1237,7 @@ renderSizeSeg();
 function applyMapSize() { const z = SIZES[mapSize]; setSize(z.w, z.h); roundTime = z.time; }
 setSize(SIZES[mapSize].w, SIZES[mapSize].h);
 
-function show(id) { for (const s of ['menu', 'keys', 'lobby', 'game']) $('#' + s).classList.toggle('hidden', s !== id); }
+function show(id) { for (const s of ['menu', 'keys', 'pups', 'lobby', 'game']) $('#' + s).classList.toggle('hidden', s !== id); }
 function getName() {
   const n = ($('#name').value.trim() || 'Player').slice(0, 12);
   myName = n; try { localStorage.setItem('bg-name', n); } catch (e) { }
