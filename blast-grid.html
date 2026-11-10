@@ -39,10 +39,12 @@
   #hud{display:flex;gap:8px;align-items:stretch;justify-content:center;flex-wrap:wrap;width:min(100%,calc((100vh - 150px) * var(--ar)))}
   .card{background:var(--panel);border:3px solid var(--line);border-radius:8px;padding:6px 10px;font-size:9px;display:flex;flex-direction:column;gap:6px;min-width:120px}
   .card.dead{opacity:.45}
-  .card .nm{display:flex;align-items:center;gap:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:150px}
+  .card .nm{display:flex;align-items:center;gap:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:210px}
   .card .st{color:var(--dim);display:flex;gap:8px}
   .emo{font-family:"Segoe UI Emoji","Apple Color Emoji","Noto Color Emoji",sans-serif;font-size:11px}
   .card .wins{color:var(--accent)}
+  .card .kc{margin-left:auto;padding-left:8px;color:#a3e635}
+  .card .kc span{color:#fb7185}
   .timer{background:var(--panel);border:3px solid var(--line);border-radius:8px;padding:6px 12px;font-size:16px;display:flex;align-items:center}
   .timer.sd{color:var(--danger)}
   canvas{width:min(100%,calc((100vh - 150px) * var(--ar)));height:auto;image-rendering:pixelated;border:4px solid #000;border-radius:6px;box-shadow:0 8px 0 #070a14;display:block}
@@ -58,6 +60,10 @@
   .kgrid button{margin:0;padding:9px 4px;font-size:9px;background:#0b1020;color:var(--text);border-color:var(--line);box-shadow:none;text-transform:none}
   .kgrid button.wait{border-color:var(--accent);color:var(--accent);animation:blink .8s steps(2) infinite}
   @keyframes blink{50%{opacity:.4}}
+  .sb{width:100%;border-collapse:collapse;font-size:9px;margin-top:14px}
+  .sb th{color:var(--dim);font-weight:normal;padding:8px 6px;border-bottom:3px solid var(--line);white-space:nowrap}
+  .sb td{padding:10px 6px;text-align:center;border-bottom:2px solid var(--line)}
+  .sb th:first-child,.sb td:first-child{text-align:left}
   #pups{width:min(920px,100%)}
   .pu-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:6px;font-size:9px;margin-top:10px;max-height:calc(100vh - 220px);overflow:auto;scrollbar-color:var(--line) transparent}
   .pu-h{font-size:10px;margin-top:8px;grid-column:1/-1}
@@ -87,6 +93,7 @@
   <div class="sep"></div>
   <button id="btnLocal" class="ghost">2 PLAYERS · SAME KEYBOARD</button>
   <div class="row"><button id="btnKeys" class="ghost" style="flex:1"><i class="emo">⌨️</i> CONTROLS</button><button id="btnPU" class="ghost" style="flex:1"><i class="emo">💣</i> POWER-UPS</button></div>
+  <button id="btnScores" class="ghost"><i class="emo">🏆</i> SCOREBOARD</button>
   <div class="status" id="menuStatus"></div>
 </div>
 
@@ -123,6 +130,14 @@
   <button id="btnPUDone">BACK</button>
 </div>
 
+<!-- ALL-TIME SCOREBOARD -->
+<div id="scores" class="panel hidden" style="width:min(720px,100%)">
+  <h1 style="font-size:22px">SCOREBOARD</h1>
+  <div class="hint" style="margin-top:0;text-align:center">All finished matches played in this browser. Hold TAB in a game for the live score.</div>
+  <div style="overflow:auto"><table class="sb"><thead><tr><th>PLAYER</th><th>MATCHES</th><th>MATCH WINS</th><th>ROUNDS</th><th>KILLS</th><th>DEATHS</th><th>K/D</th></tr></thead><tbody id="allBody"></tbody></table></div>
+  <div class="row"><button id="btnScoresReset" class="ghost">RESET</button><button id="btnScoresDone" style="flex:1">BACK</button></div>
+</div>
+
 <!-- CONTROLS -->
 <div id="keys" class="panel hidden">
   <h1 style="font-size:22px">CONTROLS</h1>
@@ -157,7 +172,7 @@
   <div id="foot">
     <span id="controls"></span>
     <span id="net"></span>
-    <span>M: SOUND</span>
+    <span>TAB: SCORES · M: SOUND</span>
     <button id="btnQuit" class="ghost">QUIT</button>
   </div>
 </div>
@@ -262,6 +277,13 @@ function newRound() {
   };
   S.sdStep = Math.min(0.14, 24 / (S.spiral.length * 0.75)); // sudden death takes ~24s whatever the map size
 }
+
+// per-match stats kept on every M.players entry (host/local), sent to guests in snapshots as `sc`
+function newPl(name, keep) {
+  const k = keep || {};
+  return { name, wins: k.wins || 0, kills: k.kills || 0, deaths: k.deaths || 0, selfK: k.selfK || 0, crates: k.crates || 0, items: k.items || 0 };
+}
+function stat(slot, key) { const pl = M && M.players[slot]; if (pl) pl[key] = (pl[key] || 0) + 1; }
 
 function makePlayer(i, alive) {
   const sp = spawnPoints()[i];
@@ -456,16 +478,16 @@ function detonate(p) {
   if (any) ev('det');
 }
 
-function hurt(p) {
+function hurt(p, by = -1) {
   if (!p.alive || p.inv > 0) return;
   if (p.hp > 1) { p.hp--; p.inv = HIT_INV; ev('hurt'); return; }
-  kill(p);
+  kill(p, by);
 }
 
-function addFlame(x, y, k) {
+function addFlame(x, y, k, o = -1) {
   const i = idx(x, y); let f = S.flames.get(i);
-  if (f) { f.t = FLAME_T; if (f.k !== k && f.k !== 'x') f.k = k === 'x' ? 'x' : 'c'; }
-  else { f = { t: FLAME_T, k }; S.flames.set(i, f); }
+  if (f) { f.t = FLAME_T; f.o = o; if (f.k !== k && f.k !== 'x') f.k = k === 'x' ? 'x' : 'c'; }
+  else { f = { t: FLAME_T, k, o }; S.flames.set(i, f); }
   return f;
 }
 
@@ -473,7 +495,7 @@ function explode(b) {
   if (b.dead) return;
   b.dead = true;
   const o = S.players[b.owner]; if (o && !b.mine) o.bombsOut = Math.max(0, o.bombsOut - 1);
-  addFlame(b.x, b.y, 'c'); ev('boom');
+  addFlame(b.x, b.y, 'c', b.owner); ev('boom');
   const dirs = b.star ? [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]] : [[1,0],[-1,0],[0,1],[0,-1]];
   for (const [dx, dy] of dirs) {
     const diag = dx !== 0 && dy !== 0, fk = diag ? 'o' : dx ? 'h' : 'v';
@@ -485,21 +507,27 @@ function explode(b) {
         break;
       }
       if (c === '+') {
-        S.grid[i] = '.';
-        const f = addFlame(x, y, 'x'); const h = S.hidden.get(i);
+        S.grid[i] = '.'; stat(b.owner, 'crates');
+        const f = addFlame(x, y, 'x', b.owner); const h = S.hidden.get(i);
         if (h) { f.reveal = h; S.hidden.delete(i); }
         if (b.pierce) continue; // Pierce Bomb: keep burning past soft blocks
         break;
       }
       const ob = S.bombs.find(q => !q.dead && q.x === x && q.y === y);
       if (ob) { explode(ob); break; }
-      if (S.pu.has(i)) { S.pu.delete(i); addFlame(x, y, fk); break; }
-      addFlame(x, y, fk);
+      if (S.pu.has(i)) { S.pu.delete(i); addFlame(x, y, fk, b.owner); break; }
+      addFlame(x, y, fk, b.owner);
     }
   }
 }
 
-function kill(p) { if (!p.alive) return; p.alive = false; p.deathT = 0; ev('die'); }
+// by: slot whose bomb did it, -1 = the arena (sudden death), null = left the game (not counted)
+function kill(p, by = -1) {
+  if (!p.alive) return; p.alive = false; p.deathT = 0; ev('die');
+  if (by === null) return;
+  stat(p.slot, 'deaths');
+  if (by === p.slot) stat(p.slot, 'selfK'); else if (by >= 0) stat(by, 'kills');
+}
 
 function endRound() {
   const alive = S.players.filter(p => p.alive);
@@ -595,10 +623,10 @@ function tick(dt) {
     if (!p.alive) continue;
     usePortal(p);
     const i = idx(Math.round(p.x), Math.round(p.y));
-    if (S.flames.has(i)) { hurt(p); if (!p.alive) continue; }
+    if (S.flames.has(i)) { hurt(p, S.flames.get(i).o); if (!p.alive) continue; }
     const t = S.pu.get(i);
     if (t) {
-      S.pu.delete(i); ev(t === 'x' ? 'curse' : 'pick');
+      S.pu.delete(i); ev(t === 'x' ? 'curse' : 'pick'); stat(p.slot, 'items');
       if (t === 'b') p.maxBombs = Math.min(8, p.maxBombs + 1);
       if (t === 'f') p.range = Math.min(MAX_RANGE, p.range + 1);
       if (t === 's') p.speed = Math.min(5, p.speed + 1);
@@ -643,7 +671,8 @@ function snapshot() {
     p: S.players.map(p => [+p.x.toFixed(3), +p.y.toFixed(3), p.alive ? 1 : 0, p.dir, +p.walk.toFixed(2), +Math.min(p.deathT, 9).toFixed(2), p.maxBombs, p.range, p.speed, p.kick ? 1 : 0, p.ghost ? 1 : 0, p.tele,
       (p.remote ? 1 : 0) | (p.pierce ? 2 : 0) | (p.softT > 0 ? 4 : 0) | (p.line ? 8 : 0), p.power, p.hp, +p.inv.toFixed(2), p.curse, Math.ceil(p.curseT),
       +p.frozen.toFixed(2), +p.invis.toFixed(2), (p.glove ? 1 : 0) | (p.star ? 2 : 0), p.mines, +p.softT.toFixed(2)]),
-    ph: S.phase, ct: +S.t.toFixed(2), tm: +S.time.toFixed(2), rt: roundTime, w: W, h: H, ban: S.banner,
+    ph: S.phase, ct: +S.t.toFixed(2), tm: +S.time.toFixed(2), rt: roundTime, w: W, h: H, ban: S.banner, mid: M.id,
+    sc: M.players.map(q => [q.kills || 0, q.deaths || 0, q.selfK || 0, q.crates || 0, q.items || 0]),
     names: M.players.map(q => q.name), wins: M.players.map(q => q.wins), con: M.players.map(q => q.connected !== false),
   };
 }
@@ -734,6 +763,13 @@ addEventListener('keydown', e => {
 }, true);
 $('#btnKeys').onclick = () => { rebinding = null; $('#keysStatus').textContent = ''; renderKeys(); show('keys'); };
 $('#btnPU').onclick = () => show('pups');
+$('#btnScores').onclick = () => { renderAllTime(); show('scores'); };
+$('#btnScoresDone').onclick = () => show('menu');
+$('#btnScoresReset').onclick = () => {
+  if (!confirm('Clear the all-time scoreboard in this browser?')) return;
+  try { localStorage.removeItem('bg-alltime'); } catch (e) { }
+  renderAllTime();
+};
 $('#btnPUDone').onclick = () => show('menu');
 $('#btnKeysDone').onclick = () => { rebinding = null; show('menu'); };
 $('#btnKeysReset').onclick = () => {
@@ -747,6 +783,7 @@ addEventListener('keydown', e => {
   unlockAudio();
   if (e.target.tagName === 'INPUT') { if (e.code === 'Enter') { if (e.target.id === 'code') $('#btnJoin').click(); } return; }
   if (!started) return;
+  if (e.code === 'Tab') { e.preventDefault(); boardHeld = true; return; }
   if (e.code === 'KeyM' && !e.repeat) { muted = !muted; return; }
   if (e.code === 'KeyR' && !e.repeat && view && view.ph === 'match' && mode !== 'guest') { startMatch(); return; }
   const k = findKey(e.code); if (!k) return;
@@ -760,7 +797,7 @@ addEventListener('keydown', e => {
   if (k.act === 'left' || k.act === 'right') localIn[li].pri = 'h';
   sendGuestInput();
 });
-addEventListener('keyup', e => { keys.delete(e.code); sendGuestInput(); });
+addEventListener('keyup', e => { if (e.code === 'Tab') boardHeld = false; keys.delete(e.code); sendGuestInput(); });
 addEventListener('blur', () => { keys.clear(); sendGuestInput(); });
 
 function readLocalInputs() {
@@ -1131,22 +1168,89 @@ function render(v, dt) {
   // overlays
   if (v.ph === 'count') bigText(String(Math.max(1, Math.ceil(v.ct))), '#ffb020');
   else if (v.ph === 'play' && v.tm > (v.rt || roundTime) - 0.7) bigText('GO!', '#a3e635');
-  else if (v.ph === 'round') banner(v.ban, 'Next round starting…');
+  else if (v.ph === 'round') drawBoard(v, v.ban, 'Next round starting…');
   else if (mode === 'guest' && joinedLate && v.ph !== 'match') banner('YOU JOINED', 'You\'ll play from the next round — watch for now', '#38bdf8');
-  else if (v.ph === 'match') banner(v.ban, mode === 'guest' ? 'Waiting for the host to start a rematch…' : 'Press R for a rematch');
+  else if (v.ph === 'match') drawBoard(v, v.ban, mode === 'guest' ? 'Waiting for the host to start a rematch…' : 'Press R for a rematch');
   if ((v.ph === 'play' || v.ph === 'grace') && v.tm <= 0 && v.tm > -2) banner('SUDDEN DEATH!', null, '#fb7185');
+  if (boardHeld && v.ph !== 'round' && v.ph !== 'match') drawBoard(v, 'SCOREBOARD', 'Release TAB to play');
+  if (v.ph === 'match') recordMatch(v);
   updateHUD(v);
+}
+
+// ---- scoreboard ----
+let boardHeld = false;
+function matchId() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+function boardRows(v) {
+  const sc = v.sc || [];
+  return v.names.map((n, i) => {
+    const [k, d, sk, cr, it] = sc[i] || [0, 0, 0, 0, 0];
+    return { i, n, w: v.wins[i] || 0, k, d, sk, cr, it, con: !v.con || v.con[i] };
+  }).sort((a, b) => b.w - a.w || b.k - a.k || a.d - b.d);
+}
+function drawBoard(v, title, sub) {
+  const rows = boardRows(v), cols = [['WINS', 'w'], ['KILLS', 'k'], ['DEATHS', 'd'], ['SELF', 'sk'], ['CRATES', 'cr'], ['ITEMS', 'it']];
+  const pw = Math.min(cv.width - 40, 760), rh = 34, ph = 120 + rows.length * rh + (sub ? 30 : 0);
+  const x0 = (cv.width - pw) / 2, y0 = (cv.height - ph) / 2;
+  ctx.fillStyle = 'rgba(5,8,18,.88)'; ctx.fillRect(0, 0, cv.width, cv.height);
+  ctx.fillStyle = '#141b2f'; ctx.strokeStyle = '#26304d'; ctx.lineWidth = 4;
+  ctx.beginPath(); ctx.roundRect(x0, y0, pw, ph, 12); ctx.fill(); ctx.stroke();
+  ctx.textBaseline = 'middle'; ctx.textAlign = 'center';
+  let size = 20; ctx.font = `${size}px "Press Start 2P", monospace`;
+  while (ctx.measureText(title).width > pw - 40 && size > 10) { size -= 2; ctx.font = `${size}px "Press Start 2P", monospace`; }
+  ctx.fillStyle = '#000'; ctx.fillText(title, cv.width / 2 + 2, y0 + 36 + 2);
+  ctx.fillStyle = '#ffb020'; ctx.fillText(title, cv.width / 2, y0 + 36);
+  const nameW = pw * 0.34, colW = (pw - 40 - nameW) / cols.length, hy = y0 + 80;
+  ctx.font = '9px "Press Start 2P", monospace'; ctx.fillStyle = '#8a94b8';
+  ctx.textAlign = 'left'; ctx.fillText('PLAYER', x0 + 20, hy);
+  ctx.textAlign = 'center'; cols.forEach(([h], c) => ctx.fillText(h, x0 + 20 + nameW + colW * (c + .5), hy));
+  rows.forEach((r, j) => {
+    const y = hy + 30 + j * rh;
+    if (r.i === mySlot && mode !== 'local') { ctx.fillStyle = 'rgba(255,176,32,.10)'; ctx.fillRect(x0 + 10, y - rh / 2 + 2, pw - 20, rh - 4); }
+    ctx.fillStyle = COLORS[r.i] || '#fff'; ctx.fillRect(x0 + 20, y - 7, 14, 14);
+    ctx.font = '11px "Press Start 2P", monospace'; ctx.textAlign = 'left';
+    ctx.fillStyle = r.con ? '#e6ebff' : '#5b6485';
+    let nm = (j === 0 && r.w > 0 ? '♛ ' : '') + r.n + (r.con ? '' : ' ✖');
+    while (ctx.measureText(nm).width > nameW - 30 && nm.length > 3) nm = nm.slice(0, -1);
+    ctx.fillText(nm, x0 + 44, y);
+    ctx.textAlign = 'center';
+    cols.forEach(([, key], c) => {
+      ctx.fillStyle = key === 'w' ? '#ffb020' : key === 'k' ? '#a3e635' : key === 'd' || key === 'sk' ? '#fb7185' : '#cbd5e1';
+      ctx.fillText(String(r[key]), x0 + 20 + nameW + colW * (c + .5), y);
+    });
+  });
+  if (sub) { ctx.font = '10px "Press Start 2P", monospace'; ctx.fillStyle = '#cbd5e1'; ctx.textAlign = 'center'; ctx.fillText(sub, cv.width / 2, y0 + ph - 26); }
+}
+
+// all-time scoreboard: every browser records each finished match it saw (stored locally, keyed by player name)
+function loadAll() { try { return JSON.parse(localStorage.getItem('bg-alltime') || '{}') || {}; } catch (e) { return {}; } }
+function recordMatch(v) {
+  if (!v.mid || !v.sc) return;
+  let seen = []; try { seen = JSON.parse(localStorage.getItem('bg-seen') || '[]'); } catch (e) { }
+  if (seen.includes(v.mid)) return;
+  const all = loadAll(), top = Math.max(...v.wins);
+  v.names.forEach((n, i) => {
+    const key = n.trim().toUpperCase(), a = all[key] || (all[key] = { name: n, m: 0, mw: 0, r: 0, k: 0, d: 0 });
+    const [k, d] = v.sc[i] || [0, 0];
+    a.name = n; a.m++; if (v.wins[i] === top && top > 0) a.mw++; a.r += v.wins[i] || 0; a.k += k; a.d += d;
+  });
+  seen.push(v.mid);
+  try { localStorage.setItem('bg-alltime', JSON.stringify(all)); localStorage.setItem('bg-seen', JSON.stringify(seen.slice(-200))); } catch (e) { }
+}
+function renderAllTime() {
+  const rows = Object.values(loadAll()).sort((a, b) => b.mw - a.mw || b.r - a.r || b.k - a.k);
+  $('#allBody').innerHTML = rows.length ? rows.map((a, j) => `<tr><td>${j === 0 ? '♛ ' : ''}${esc(a.name)}</td><td>${a.m}</td><td style="color:var(--accent)">${a.mw}</td><td>${a.r}</td><td style="color:#a3e635">${a.k}</td><td style="color:#fb7185">${a.d}</td><td>${(a.k / Math.max(1, a.d)).toFixed(2)}</td></tr>`).join('')
+    : '<tr><td colspan="7" style="color:var(--dim);text-align:center;padding:20px">No finished matches yet</td></tr>';
 }
 
 let hudKey = '';
 function updateHUD(v) {
   const timer = v.tm > 0 ? `${Math.floor(Math.ceil(v.tm) / 60)}:${String(Math.ceil(v.tm) % 60).padStart(2, '0')}` : 'SD!';
-  const key = JSON.stringify([timer, v.names, v.wins, v.con, v.p.map(p => [p[2], p[6], p[7], p[8], p[9], p[10], p[11], p[12], p[13], p[14], p[15] > 0 ? Math.ceil(p[15]) : 0, p[16], p[17], Math.ceil(p[18] || 0), Math.ceil(p[19] || 0), p[20], p[21], Math.ceil(p[22] || 0)])]);
+  const key = JSON.stringify([timer, v.names, v.wins, v.con, v.sc, v.p.map(p => [p[2], p[6], p[7], p[8], p[9], p[10], p[11], p[12], p[13], p[14], p[15] > 0 ? Math.ceil(p[15]) : 0, p[16], p[17], Math.ceil(p[18] || 0), Math.ceil(p[19] || 0), p[20], p[21], Math.ceil(p[22] || 0)])]);
   if (key === hudKey) return; hudKey = key;
   const cards = v.names.map((n, i) => {
     const p = v.p[i];
     const stars = '★'.repeat(v.wins[i]) + '☆'.repeat(Math.max(0, WIN_TARGET - v.wins[i]));
-    return `<div class="card ${p[2] ? '' : 'dead'}"><div class="nm"><span class="dot" style="background:${COLORS[i]}"></span>${esc(n)}${i === mySlot && mode !== 'local' ? ' (you)' : ''}${v.con[i] ? '' : ' ✖'}</div>
+    return `<div class="card ${p[2] ? '' : 'dead'}"><div class="nm"><span class="dot" style="background:${COLORS[i]}"></span>${esc(n)}${i === mySlot && mode !== 'local' ? ' (you)' : ''}${v.con[i] ? '' : ' ✖'}${v.sc && v.sc[i] ? `<span class="kc" title="kills / deaths">⚔${v.sc[i][0]}<span>/${v.sc[i][1]}</span></span>` : ''}</div>
       <div class="wins">${stars}</div><div class="st"><span><i class="emo">💣</i>${p[6]}</span><span><i class="emo">🔥</i>${p[7]}</span><span><i class="emo">⚡</i>${p[8]}</span>${p[9] ? '<span><i class="emo">👢</i></span>' : ''}${p[10] ? '<span><i class="emo">👻</i></span>' : ''}${p[11] ? `<span><i class="emo">🌀</i>${p[11]}</span>` : ''}${p[12] & 1 ? '<span><i class="emo">📡</i></span>' : ''}${p[12] & 2 ? '<span><i class="emo">🎯</i></span>' : ''}${p[12] & 4 ? `<span><i class="emo">🧱</i>${Math.ceil(p[22] || 0)}</span>` : ''}${p[12] & 8 ? '<span><i class="emo">➖</i></span>' : ''}${p[13] ? `<span><i class="emo">💥</i>${p[13]}</span>` : ''}${p[14] > 1 ? `<span><i class="emo">❤️</i>${p[14]}</span>` : ''}${p[15] > 0 && p[15] > HIT_INV ? `<span><i class="emo">🛡️</i>${Math.ceil(p[15])}</span>` : ''}${p[16] ? `<span style="color:#fb7185"><i class="emo">💀</i>${CURSE_LABEL[p[16]] || ''} ${p[17]}</span>` : ''}${p[20] & 1 ? '<span><i class="emo">🧤</i></span>' : ''}${p[20] & 2 ? '<span><i class="emo">⭐</i></span>' : ''}${p[21] ? `<span><i class="emo">🧨</i>${p[21]}</span>` : ''}${p[18] > 0 ? `<span style="color:#7dd3fc"><i class="emo">❄️</i>${Math.ceil(p[18])}</span>` : ''}${p[19] > 0 ? `<span><i class="emo">👁️</i>${Math.ceil(p[19])}</span>` : ''}</div></div>`;
   });
   const half = Math.ceil(cards.length / 2);
@@ -1237,7 +1341,7 @@ renderSizeSeg();
 function applyMapSize() { const z = SIZES[mapSize]; setSize(z.w, z.h); roundTime = z.time; }
 setSize(SIZES[mapSize].w, SIZES[mapSize].h);
 
-function show(id) { for (const s of ['menu', 'keys', 'pups', 'lobby', 'game']) $('#' + s).classList.toggle('hidden', s !== id); }
+function show(id) { for (const s of ['menu', 'keys', 'pups', 'scores', 'lobby', 'game']) $('#' + s).classList.toggle('hidden', s !== id); }
 function getName() {
   const n = ($('#name').value.trim() || 'Player').slice(0, 12);
   myName = n; try { localStorage.setItem('bg-name', n); } catch (e) { }
@@ -1267,7 +1371,7 @@ function enterGame() {
 $('#btnLocal').onclick = () => {
   unlockAudio(); resetAll(); mode = 'local'; mySlot = 0;
   const n = getName();
-  M = { players: [{ name: n === 'Player' ? 'Player 1' : n, wins: 0 }, { name: 'Player 2', wins: 0 }], target: WIN_TARGET };
+  M = { players: [newPl(n === 'Player' ? 'Player 1' : n), newPl('Player 2')], target: WIN_TARGET, id: matchId() };
   inputs = []; readLocalInputs(); applyMapSize(); newRound(); enterGame();
 };
 
@@ -1335,7 +1439,7 @@ function hotJoin(entry) {
   const back = slot !== undefined;
   if (!back) slot = free.length ? free[0] : M.players.length < MAX_PLAYERS ? M.players.length : -1;
   if (slot < 0) return false;
-  M.players[slot] = { name: entry.name, wins: back ? M.players[slot].wins : 0 };
+  M.players[slot] = newPl(entry.name, back ? M.players[slot] : null); // rejoining under the same name keeps the stats
   entry.slot = slot; inputs[slot] = undefined;
   if (S) {
     const now = S.phase === 'count';
@@ -1351,7 +1455,7 @@ function dropConn(entry) {
   entry.open = false; conns = conns.filter(c => c !== entry);
   if (started && entry.slot >= 0 && M && M.players[entry.slot]) {
     M.players[entry.slot].connected = false;
-    if (S && S.players[entry.slot]) kill(S.players[entry.slot]);
+    if (S && S.players[entry.slot]) kill(S.players[entry.slot], null);
   }
   if (!started) renderLobby();
 }
@@ -1368,13 +1472,13 @@ function renderLobby(list) {
   }
 }
 function startMatch() {
-  if (mode === 'local') { M.players.forEach(p => p.wins = 0); newRound(); return; }
+  if (mode === 'local') { M.players = M.players.map(p => newPl(p.name)); M.id = matchId(); newRound(); return; }
   const open = conns.filter(c => c.open);
   if (open.length < 1) { // everyone left: back to lobby
     started = false; show('lobby'); renderLobby(); lobbyStatus('Your colleague left. Waiting for players…'); return;
   }
   open.forEach((c, i) => c.slot = i + 1);
-  M = { players: [{ name: myName, wins: 0 }].concat(open.map(c => ({ name: c.name, wins: 0 }))), target: WIN_TARGET };
+  M = { players: [newPl(myName)].concat(open.map(c => newPl(c.name))), target: WIN_TARGET, id: matchId() };
   inputs = []; readLocalInputs(); applyMapSize();
   open.forEach(c => c.conn.send({ t: 'start', slot: c.slot }));
   newRound(); enterGame();
