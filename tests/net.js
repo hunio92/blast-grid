@@ -4,15 +4,18 @@ const { loadGame } = require('./harness');
 
 function rng(seed) { let t = seed >>> 0; return () => { t = (t + 0x6D2B79F5) >>> 0; let r = Math.imul(t ^ (t >>> 15), 1 | t); r ^= r + Math.imul(r ^ (r >>> 7), 61 | r); return ((r ^ (r >>> 14)) >>> 0) / 4294967296; }; }
 
-function makeLink({ seed = 1, latency = [100, 100], bots = [], size = 'S' } = {}) {
+// hostMs: how often the host's timer fires (browsers round 1000/60 down to 16); frameMs: guest screen refresh;
+// latencyFn(nowMs) → ms overrides the random latency (e.g. to inject a spike).
+function makeLink({ seed = 1, latency = [100, 100], bots = [], size = 'S', hostMs = 1000 / 60, frameMs = 1000 / 60, latencyFn = null } = {}) {
   const host = loadGame({ seed }), guest = loadGame({ seed: seed + 1000 });
-  const rand = rng(seed + 7), lat = () => latency[0] + rand() * (latency[1] - latency[0]);
+  const rand = rng(seed + 7), lat = () => latencyFn ? latencyFn(now) : latency[0] + rand() * (latency[1] - latency[0]);
   let now = 1000;
   const toGuest = [], toHost = [];
   const clone = m => JSON.parse(JSON.stringify(m));
   host.ctx.__sendToGuest = m => toGuest.push({ at: now + lat(), m: clone(m) });
   guest.ctx.__sendToHost = m => toHost.push({ at: now + lat(), m: clone(m) });
   const setNow = () => { host.ctx.__now = now; guest.ctx.__now = now; };
+  let nextHost = now + hostMs, nextGuest = now + frameMs;
   setNow();
   guest.run(`mode = 'guest'; myName = 'G'; hostConn = { open: true, send: m => __sendToHost(m) };
     myPing = ${(latency[0] + latency[1])}; lastR = performance.now();`);
@@ -27,14 +30,21 @@ function makeLink({ seed = 1, latency = [100, 100], bots = [], size = 'S' } = {}
     now: () => now,
     frames: [], // guest display view after every frame
     step(ms, onFrame) {
-      for (let t = 0; t < ms; t += 1000 / 60) {
-        now += 1000 / 60; setNow();
+      const end = now + ms;
+      for (;;) {
+        const t = Math.min(nextHost, nextGuest);
+        if (t > end) break;
+        now = t; setNow();
         deliver(toHost, m => { host.ctx.__m = m; host.run('hostOnData(GUEST, __m)'); });
         deliver(toGuest, m => { guest.ctx.__m = m; guest.run('guestOnData(__m)'); });
-        host.run('simStep()');
-        guest.run('var __dv = view ? guestUpdate(performance.now(), 1 / 60) : null;');
-        if (onFrame) onFrame(link);
+        if (t === nextHost) { host.run('simStep()'); nextHost += hostMs; }
+        if (t === nextGuest) {
+          guest.run(`var __dv = view ? guestUpdate(performance.now(), ${frameMs / 1000}) : null;`);
+          nextGuest += frameMs;
+          if (onFrame) onFrame(link);
+        }
       }
+      now = end; setNow();
     },
     hostPos: slot => host.run(`[S.players[${slot}].x, S.players[${slot}].y]`),
     guestPos: slot => guest.run(`__dv ? [__dv.p[${slot}][0], __dv.p[${slot}][1]] : null`),

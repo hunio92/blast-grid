@@ -130,7 +130,7 @@ test('interpolation delay adapts to jitter', () => {
   link = ready({ latency: [40, 160], seed: 9 });
   link.step(1000);
   const jittery = link.guest.run('interpDelay');
-  assert.ok(steady >= 40 && steady < 60, 'steady ' + steady);
+  assert.ok(steady >= 40 && steady < 80, 'steady ' + steady); // one snapshot interval + host timer unevenness
   assert.ok(jittery > 100 && jittery <= 160, 'jittery ' + jittery);
 });
 
@@ -148,5 +148,55 @@ test('sliding bomb moves smoothly', () => {
   for (let k = 1; k < xs.length; k++) {
     assert.ok(xs[k] >= xs[k - 1] - 1e-9, `went back at ${k}`);
     assert.ok(xs[k] - xs[k - 1] <= 3 * 9 / 60, `jumped at ${k}: ${xs[k - 1]} → ${xs[k]}`);
+  }
+});
+
+// ---- review fixes: real browser timing, top speed, lag spikes, high-refresh screens ----
+test('browser-rate host (16 ms timer) keeps the interpolation delay low', () => {
+  const link = ready({ hostMs: 16, latency: [100, 100] });
+  link.step(1500);
+  const d = link.guest.run('interpDelay');
+  assert.ok(d < 80, 'interpDelay ' + d); // was ~120 when snapshots were timed by timer calls
+});
+
+test('no rubber-banding at top speed under jitter', () => {
+  const link = ready({ size: 'L', latency: [60, 140], seed: 3 });
+  link.host.run("S.players[1].speed = 5; S.players[1].curse = 'rush'; S.players[1].curseT = 99;");
+  link.step(300);
+  const xs = [];
+  link.press('KeyA');
+  link.step(1400, l => xs.push(l.guestPos(1)[0]));
+  const nominal = (3.2 + 0.55 * 5) * 1.8 / 60;
+  for (let k = 10; k < xs.length; k++) { // the on-screen speed stays steady: no tug-of-war with the host
+    const d = xs[k - 1] - xs[k];
+    assert.ok(d > 0.6 * nominal && d < 1.4 * nominal, `frame ${k}: moved ${(d / nominal).toFixed(2)}× normal`);
+  }
+});
+
+test('other players move steadily through a lag spike', () => {
+  let spikeAt = Infinity;
+  const link = ready({ latencyFn: t => (t >= spikeAt && t < spikeAt + 200 ? 320 : 100) });
+  openTopRow(link);
+  link.host.run("keys.add('KeyD')");
+  link.step(500);
+  spikeAt = link.now() + 300;
+  const xs = [];
+  link.step(3500, l => xs.push(l.guestPos(0)[0]));
+  const nominal = 3.2 / 60;
+  for (let k = 1; k < xs.length; k++) {
+    assert.ok(xs[k] >= xs[k - 1] - 1e-9, `went back at frame ${k}`);
+    assert.ok(xs[k] - xs[k - 1] <= 2.2 * nominal, `lurched at frame ${k}: ${(xs[k] - xs[k - 1]).toFixed(3)}`);
+  }
+});
+
+test('own player moves smoothly on a 144 Hz screen', () => {
+  const link = ready({ frameMs: 1000 / 144 });
+  const xs = [];
+  link.press('KeyA');
+  link.step(600, l => xs.push(l.guestPos(1)[0]));
+  const nominal = 3.2 / 144;
+  for (let k = 5; k < xs.length; k++) {
+    const d = xs[k - 1] - xs[k];
+    assert.ok(d > 0.3 * nominal && d < 2 * nominal, `frame ${k}: moved ${d.toFixed(4)} (nominal ${nominal.toFixed(4)})`);
   }
 });

@@ -1717,16 +1717,20 @@ function updateHUD(v) {
 function esc(s) { return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 
 // ================== MAIN LOOP ==================
-let lastT = performance.now(), acc = 0, sendTick = 0;
+let lastT = performance.now(), acc = 0, hostTicks = 0;
 function simStep() {
   const now = performance.now(), dt = Math.min(0.25, (now - lastT) / 1000); lastT = now;
   if ((mode === 'local' || mode === 'host') && started && S) {
     readLocalInputs();
     acc += dt;
-    while (acc >= 1 / 60) { tick(1 / 60); acc -= 1 / 60; }
+    while (acc >= 1 / 60) {
+      tick(1 / 60); acc -= 1 / 60;
+      // one snapshot every 2 game ticks, so snapshot q is always at game time q × 33.3 ms (guests time playback by it;
+      // timers in browsers fire every 16 ms, not 16.67, so counting timer calls would drift)
+      if (mode === 'host' && ++hostTicks % 2 === 0) broadcast({ ...snapshot(), ev: netEv.splice(0), q: netSeq++ });
+    }
     view = snapshot();
     playEvents(localEv.splice(0));
-    if (mode === 'host' && (sendTick++ % 2 === 0)) broadcast({ ...view, ev: netEv.splice(0), q: netSeq++ });
   }
 }
 // The simulation is driven from a Web Worker timer: browsers slow normal timers in a hidden/minimized tab to about
@@ -1776,14 +1780,14 @@ function histAt(t) {
 }
 function predMoveTo(x, y) { // move the predicted position without a visible jump (the shown position eases over)
   const dx = x - PRED.x, dy = y - PRED.y;
-  PRED.offX -= dx; PRED.offY -= dy; PRED.x = x; PRED.y = y;
+  PRED.offX -= dx; PRED.offY -= dy; PRED.x = x; PRED.y = y; PRED.prevX += dx; PRED.prevY += dy;
   for (const h of PRED.hist) { h.x += dx; h.y += dy; } // the past is corrected too, so it isn't counted twice
   for (const i of [...PRED.pass]) if (!overlaps(x, y, i)) PRED.pass.delete(i);
 }
 function predictOnSnapshot(d, now) {
   if (!predictable(d)) { PRED = null; return; }
   const sp = d.p[mySlot], sx = sp[0], sy = sp[1];
-  if (!PRED) PRED = { x: sx, y: sy, dir: sp[3], walk: sp[4], offX: 0, offY: 0, hist: [], pass: new Set(), known: new Set(), lastInput: -1e9 };
+  if (!PRED) PRED = { x: sx, y: sy, prevX: sx, prevY: sy, dir: sp[3], walk: sp[4], offX: 0, offY: 0, hist: [], pass: new Set(), known: new Set(), lastInput: -1e9, over: 0 };
   // our own new bomb under us: we may walk off it, like on the host (anyone else's bomb blocks us)
   const tiles = bombTilesOf(d);
   for (const b of d.b) {
@@ -1798,10 +1802,16 @@ function predictOnSnapshot(d, now) {
   const idle = now - PRED.lastInput > lag + 150;
   const ref = idle ? PRED : (histAt(now - lag) || PRED);
   const ex = sx - ref.x, ey = sy - ref.y, e = Math.hypot(ex, ey);
-  if (e > PRED_SNAP) { // teleport, portal, new round…: jump
-    PRED.x = sx; PRED.y = sy; PRED.offX = PRED.offY = 0; PRED.hist = [];
+  // while moving, latency wobble shows up as distance: allow for it at the speed we're going (tiles/s × seconds)
+  const speed = (3.2 + 0.55 * sp[8]) * (sp[16] === 'slow' ? 0.5 : sp[16] === 'rush' ? 1.8 : 1);
+  const wobble = arrivals.length ? (Math.max(...arrivals) - Math.min(...arrivals)) / 1000 : 0.05;
+  const tol = idle ? PRED_TOL_IDLE : Math.max(PRED_TOL_MOVE, speed * (wobble + 0.05));
+  PRED.over = e > tol ? (PRED.over || 0) + 1 : 0;
+  if (e > PRED_SNAP + (idle ? 0 : tol)) { // teleport, portal, new round…: jump
+    PRED.x = PRED.prevX = sx; PRED.y = PRED.prevY = sy; PRED.offX = PRED.offY = 0; PRED.hist = []; PRED.over = 0;
     PRED.pass = new Set([...tiles].filter(i => overlaps(sx, sy, i)));
-  } else if (e > (idle ? PRED_TOL_IDLE : PRED_TOL_MOVE)) {
+  } else if (e > tol && (idle || PRED.over >= 2)) { // moving: only when two snapshots in a row agree we're off
+    PRED.over = 0;
     let nx = PRED.x + ex, ny = PRED.y + ey;
     if (!predFree(nx, ny)) { nx = sx; ny = sy; } // never land inside something: take the host's word
     predMoveTo(nx, ny);
@@ -1816,7 +1826,7 @@ function predictStep(now, dt) {
   const pp = predPlayer(v), saved = S;
   predAcc = Math.min(0.25, predAcc + dt);
   S = PRED.world;
-  try { while (predAcc >= 1 / 60) { movePlayer(pp, inp, 1 / 60); predAcc -= 1 / 60; } }
+  try { while (predAcc >= 1 / 60) { PRED.prevX = pp.x; PRED.prevY = pp.y; movePlayer(pp, inp, 1 / 60); predAcc -= 1 / 60; } }
   finally { S = saved; }
   PRED.x = pp.x; PRED.y = pp.y; PRED.dir = pp.dir; PRED.walk = pp.walk;
   for (const i of [...PRED.pass]) if (!overlaps(PRED.x, PRED.y, i)) { PRED.pass.delete(i); PRED.world = null; }
@@ -1829,8 +1839,8 @@ function predictStep(now, dt) {
 // Snapshots are timed by the host's own clock (it sends one every other 60 Hz step, numbered q), not by when they
 // happen to arrive, so network jitter doesn't turn into jerky movement.
 const SNAP_MS = 2000 / 60;
-let snapBuf = [], arrivals = [], interpDelay = 60;
-function interpReset() { snapBuf = []; arrivals = []; interpDelay = 60; }
+let snapBuf = [], arrivals = [], interpDelay = 60, lastIT = -Infinity;
+function interpReset() { snapBuf = []; arrivals = []; interpDelay = 60; lastIT = -Infinity; }
 function interpOnSnapshot(d, now) {
   if (typeof d.q !== 'number') return;
   const ht = d.q * SNAP_MS;
@@ -1838,10 +1848,17 @@ function interpOnSnapshot(d, now) {
   while (snapBuf.length > 2 && snapBuf[1].ht < ht - 1000) snapBuf.shift();
   arrivals.push(now - ht); if (arrivals.length > 60) arrivals.shift();
   const lo = Math.min(...arrivals), hi = Math.max(...arrivals);
-  interpDelay = Math.min(160, Math.max(40, hi - lo + SNAP_MS + 5)); // enough to always have a snapshot to move toward
+  // enough delay to always have a snapshot to move toward; it grows at once but shrinks slowly after a lag spike
+  const want = Math.min(160, Math.max(40, hi - lo + SNAP_MS + 5));
+  interpDelay = want > interpDelay ? want : Math.max(want, interpDelay - 2);
 }
-// host time we draw other players at
-function interpTime(now) { return now - Math.min(...arrivals) - interpDelay; }
+// host time we draw other players at: never goes backwards, never runs more than 25% fast, never past the newest data
+function interpTime(now, dt) {
+  let t = now - Math.min(...arrivals) - interpDelay;
+  if (lastIT > -Infinity) t = Math.max(lastIT, Math.min(t, lastIT + dt * 1000 * 1.25));
+  t = Math.min(t, snapBuf[snapBuf.length - 1].ht);
+  return (lastIT = t);
+}
 // position (and throw height) between snapshots a and b; fuse and flags stay the latest ones (cur)
 function lerpBomb(a, b, f, cur) { return [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, cur[2], cur[3], Math.round(a[4] + (b[4] - a[4]) * f), cur[5]]; }
 function nearestBomb(list, ref, maxD) {
@@ -1849,9 +1866,9 @@ function nearestBomb(list, ref, maxD) {
   for (const b of list) if (b[5] === ref[5] && !(b[3] & 8)) { const d = Math.abs(b[0] - ref[0]) + Math.abs(b[1] - ref[1]); if (d < bd) { bd = d; best = b; } }
   return best;
 }
-function interpView(now) {
+function interpView(now, dt) {
   if (snapBuf.length < 2 || !arrivals.length) return null;
-  const t = interpTime(now);
+  const t = interpTime(now, dt);
   let k = snapBuf.length - 1;
   while (k > 0 && snapBuf[k - 1].ht > t) k--;
   if (k === 0) return { a: snapBuf[0].v, b: snapBuf[0].v, f: 0 };
@@ -1863,11 +1880,15 @@ function interpView(now) {
 function guestUpdate(now, dt) {
   if (!view) return view;
   predictStep(now, dt);
-  const iv = interpView(now);
+  const iv = interpView(now, dt);
   if (!PRED && !iv) return view;
   const dv = Object.assign({}, view);
   dv.p = view.p.map((p, i) => {
-    if (PRED && i === mySlot) { const q = p.slice(); q[0] = PRED.x + PRED.offX; q[1] = PRED.y + PRED.offY; q[3] = PRED.dir; q[4] = PRED.walk; return q; }
+    if (PRED && i === mySlot) { // drawn between the last two game steps, so fast screens see smooth movement
+      const q = p.slice(), a = predAcc * 60;
+      q[0] = PRED.prevX + (PRED.x - PRED.prevX) * a + PRED.offX; q[1] = PRED.prevY + (PRED.y - PRED.prevY) * a + PRED.offY;
+      q[3] = PRED.dir; q[4] = PRED.walk; return q;
+    }
     if (!iv) return p;
     const pa = iv.a.p[i], pb = iv.b.p[i];
     if (!pa || !pb || Math.abs(pa[0] - pb[0]) + Math.abs(pa[1] - pb[1]) > 1.5) return p; // a jump (teleport, new round): show it
