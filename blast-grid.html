@@ -1738,6 +1738,9 @@ try {
   w.onmessage = () => { simStep(); if (++n % 60 === 0) netTick(); }; // netTick on the same un-throttled clock
 } catch (e) { setInterval(simStep, 1000 / 60); setInterval(() => netTick(), 1000); }
 
+// ---- guest: what to draw this frame (Task 2/3 fill this in) ----
+function guestUpdate(now, dt) { return view; }
+
 // ---- connection quality (ping + direct/relay) ----
 function netTick() {
   const now = performance.now();
@@ -1785,7 +1788,7 @@ function updateNet() {
 let lastR = performance.now();
 function frame(now) {
   const dt = Math.min(0.1, (now - lastR) / 1000); lastR = now;
-  if (started && view) render(view, dt);
+  if (started && view) render(mode === 'guest' ? guestUpdate(now, dt) : view, dt);
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
@@ -1890,24 +1893,28 @@ function startHostPeer(tries = 0) {
       entry.open = true; conns.push(entry);
       if (!started) renderLobby(); // mid-game joiners are placed once their name arrives (hello)
     });
-    conn.on('data', d => {
-      if (!d || typeof d !== 'object') return;
-      entry.seen = performance.now();
-      if (d.t === 'bye') { conn.close(); dropConn(entry); return; }
-      if (onPing(conn, d)) return;
-      if (d.t === 'pong') { entry.ping = performance.now() - d.c; return; }
-      if (d.t === 'hello') {
-        entry.name = String(d.name || 'Guest').slice(0, 12);
-        if (!started) renderLobby();
-        else if (entry.slot < 0 && !hotJoin(entry)) { entry.open = false; conns = conns.filter(c => c !== entry); reject('Room is full.'); }
-      }
-      else if (d.t === 'in' && entry.slot >= 0 && d.k) {
-        if (typeof d.k.q === 'number') { if (d.k.q < entry.inQ) return; entry.inQ = d.k.q; } // drop stale, out-of-order input
-        inputs[entry.slot] = d.k;
-      }
-    });
+    entry.reject = reject;
+    conn.on('data', d => hostOnData(entry, d));
     conn.on('close', () => dropConn(entry));
   });
+}
+// A message from one guest's connection (entry = that guest's record in conns)
+function hostOnData(entry, d) {
+  if (!d || typeof d !== 'object') return;
+  const conn = entry.conn;
+  entry.seen = performance.now();
+  if (d.t === 'bye') { try { conn.close(); } catch (e) { } dropConn(entry); return; }
+  if (onPing(conn, d)) return;
+  if (d.t === 'pong') { entry.ping = performance.now() - d.c; return; }
+  if (d.t === 'hello') {
+    entry.name = String(d.name || 'Guest').slice(0, 12);
+    if (!started) renderLobby();
+    else if (entry.slot < 0 && !hotJoin(entry)) { entry.open = false; conns = conns.filter(c => c !== entry); if (entry.reject) entry.reject('Room is full.'); }
+  }
+  else if (d.t === 'in' && entry.slot >= 0 && d.k) {
+    if (typeof d.k.q === 'number') { if (d.k.q < entry.inQ) return; entry.inQ = d.k.q; } // drop stale, out-of-order input
+    inputs[entry.slot] = d.k;
+  }
 }
 // Hot join: someone connects while a match is running. They take a free (left) slot — getting their old score back
 // if they rejoin under the same name — or a new slot, and play from the next round (immediately during the countdown).
@@ -2042,30 +2049,32 @@ $('#btnJoin').onclick = () => {
       show('lobby'); renderLobby([{ name: '…', kind: 'host' }, { name: myName, kind: 'guest' }]);
       lobbyStatus(''); menuStatus('');
     });
-    hostConn.on('data', d => {
-      if (!d || typeof d !== 'object') return;
-      if (onPing(hostConn, d)) return;
-      if (d.t === 'pong') { const r = performance.now() - d.c; myPing = myPing ? myPing * 0.6 + r * 0.4 : r; return; }
-      if (d.t === 'reject') toMenu(d.why);
-      else if (d.t === 'bye') toMenu('The host closed the game.');
-      else if (d.t === 'lobby') {
-        const list = (d.players || []).map((p, i) => typeof p === 'string' ? { name: p, kind: i ? 'guest' : 'host' }
-          : { name: String(p.name), kind: p.bot ? 'bot' : i ? 'guest' : 'host', level: p.bot });
-        renderLobby(list, cleanSet(d.set)); lobbyStatus('Waiting for the host to start…');
-      }
-      else if (d.t === 'start') { mySlot = d.slot; joinedLate = !!d.late; localIn[0].bombSeq = 0; localIn[0].teleSeq = 0; localIn[0].detSeq = 0; lastSent = ''; lastSnapQ = -1; lastSnapAt = performance.now(); view = null; enterGame(); sendGuestInput(); }
-      else if (d.t === 's') {
-        if (d.ev) playEvents(d.ev);
-        if (typeof d.q === 'number') { if (d.q <= lastSnapQ) return; lastSnapQ = d.q; } // an older snapshot arrived late: skip it
-        lastSnapAt = performance.now();
-        if (d.w && (d.w !== W || d.h !== H)) setSize(d.w, d.h);
-        view = d;
-        if (joinedLate && d.p[mySlot] && d.p[mySlot][2]) joinedLate = false;
-      }
-    });
+    hostConn.on('data', guestOnData);
     hostConn.on('close', () => { if (mode === 'guest') toMenu('The host closed the game.'); });
   });
 };
+// A message from the host
+function guestOnData(d) {
+  if (!d || typeof d !== 'object') return;
+  if (onPing(hostConn, d)) return;
+  if (d.t === 'pong') { const r = performance.now() - d.c; myPing = myPing ? myPing * 0.6 + r * 0.4 : r; return; }
+  if (d.t === 'reject') toMenu(d.why);
+  else if (d.t === 'bye') toMenu('The host closed the game.');
+  else if (d.t === 'lobby') {
+    const list = (d.players || []).map((p, i) => typeof p === 'string' ? { name: p, kind: i ? 'guest' : 'host' }
+      : { name: String(p.name), kind: p.bot ? 'bot' : i ? 'guest' : 'host', level: p.bot });
+    renderLobby(list, cleanSet(d.set)); lobbyStatus('Waiting for the host to start…');
+  }
+  else if (d.t === 'start') { mySlot = d.slot; joinedLate = !!d.late; localIn[0].bombSeq = 0; localIn[0].teleSeq = 0; localIn[0].detSeq = 0; lastSent = ''; lastSnapQ = -1; lastSnapAt = performance.now(); view = null; enterGame(); sendGuestInput(); }
+  else if (d.t === 's') {
+    if (d.ev) playEvents(d.ev);
+    if (typeof d.q === 'number') { if (d.q <= lastSnapQ) return; lastSnapQ = d.q; } // an older snapshot arrived late: skip it
+    lastSnapAt = performance.now();
+    if (d.w && (d.w !== W || d.h !== H)) setSize(d.w, d.h);
+    view = d;
+    if (joinedLate && d.p[mySlot] && d.p[mySlot][2]) joinedLate = false;
+  }
+}
 </script>
 </body>
 </html>
