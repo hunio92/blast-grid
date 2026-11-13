@@ -82,12 +82,15 @@ function loadGame(opts = {}) {
   return { run, ctx };
 }
 
-// Set up an offline match without going through the DOM. opts: { humans = 2, bots = [], set } (extended by later tasks).
+// Set up an offline match without going through the DOM.
+// opts: { humans = 2 (0 allowed in tests), bots = ['easy'|'normal'|'hard', ...], set: partial settings }
 function startLocal(run, opts = {}) {
+  const humans = opts.humans === undefined ? 2 : opts.humans;
   run(`
-    mode = 'local'; mySlot = 0; inputs = [];
-    M = { players: [newPl('Player 1'), newPl('Player 2')], target: WIN_TARGET, id: matchId() };
-    applyMapSize(); newRound(); started = true;
+    resetAll(); mode = 'local'; mySlot = 0; localHumans = ${humans};
+    lobbyBots = ${JSON.stringify((opts.bots || []).map(level => ({ level })))};
+    SET = cleanSet(Object.assign({}, DEFAULT_SET, ${JSON.stringify(opts.set || {})}));
+    startMatch();
   `);
 }
 

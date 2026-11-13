@@ -53,7 +53,19 @@
   .seg{display:flex;gap:8px}
   .seg button{flex:1;margin-top:0;padding:10px 4px;font-size:9px;background:transparent;color:var(--dim);border-color:var(--line);box-shadow:none}
   .seg button.on{background:var(--accent);color:#1a1205;border-color:#000;box-shadow:0 3px 0 #7c2d12}
-  .mapinfo{font-size:10px;color:var(--accent);margin-top:10px}
+  #lobby{width:min(640px,100%)}
+  .panel{max-height:calc(100vh - 32px);overflow:auto;scrollbar-color:var(--line) transparent}
+  .plist li .lv{margin-left:auto;font-size:9px;color:var(--dim)}
+  .plist li.bot{cursor:pointer}
+  .plist li.bot .lv{color:var(--accent)}
+  .plist li .x{flex:0 0 auto;width:auto;margin:0 0 0 8px;padding:4px 8px;font-size:9px;background:transparent;color:var(--danger);border-color:var(--line);box-shadow:none}
+  #setBox .seg button:disabled{opacity:1;cursor:default}
+  #setBox .seg button.on:disabled{opacity:1}
+  #setBox .seg button:not(.on):disabled{opacity:.45}
+  .pugrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(42px,1fr));gap:6px}
+  .pugrid button{margin:0;padding:6px 0;font-size:16px;background:#0b1020;border-color:var(--accent);box-shadow:none}
+  .pugrid button.off{border-color:var(--line);opacity:.35;filter:grayscale(1)}
+  .pugrid button:disabled{cursor:default}
   .kgrid{display:grid;grid-template-columns:auto 1fr 1fr;gap:8px 10px;align-items:center;font-size:9px;margin-top:14px}
   .kgrid .kh{color:var(--accent);text-align:center}
   .kgrid .ka{color:var(--dim)}
@@ -81,16 +93,13 @@
   <div class="sub">Drop bombs. Blow up crates.<br>Be the last one standing.</div>
   <label for="name">YOUR NAME</label>
   <input id="name" maxlength="12" placeholder="Player">
-  <label>MAP SIZE (HOST / LOCAL)</label>
-  <div class="seg" id="sizeSeg">
-    <button data-s="S">CLASSIC<br><br>15×13</button><button data-s="M">LARGE<br><br>21×17</button><button data-s="L">HUGE<br><br>27×19</button>
-  </div>
   <button id="btnHost">HOST ONLINE GAME</button>
   <div class="row">
     <div><label for="code">ROOM CODE</label><input id="code" maxlength="6" placeholder="ABC12" style="text-transform:uppercase"></div>
     <button id="btnJoin" class="alt">JOIN</button>
   </div>
   <div class="sep"></div>
+  <button id="btnBots" class="alt"><i class="emo">🤖</i> PLAY VS BOTS</button>
   <button id="btnLocal" class="ghost">2 PLAYERS · SAME KEYBOARD</button>
   <div class="row"><button id="btnKeys" class="ghost" style="flex:1"><i class="emo">⌨️</i> CONTROLS</button><button id="btnPU" class="ghost" style="flex:1"><i class="emo">💣</i> POWER-UPS</button></div>
   <button id="btnScores" class="ghost"><i class="emo">🏆</i> SCOREBOARD</button>
@@ -148,21 +157,33 @@
   <div class="row"><button id="btnKeysReset" class="ghost">RESET DEFAULTS</button><button id="btnKeysDone" style="flex:1">DONE</button></div>
 </div>
 
-<!-- LOBBY -->
+<!-- LOBBY (online host / guest, and offline setup) -->
 <div id="lobby" class="panel hidden">
-  <h1 style="font-size:22px">LOBBY</h1>
+  <h1 style="font-size:22px" id="lobbyTitle">LOBBY</h1>
   <div id="hostBox">
     <label>ROOM CODE — SEND THIS TO YOUR COLLEAGUE</label>
     <div class="code" id="roomCode">·····</div>
     <button id="btnCopy" class="ghost" style="margin-top:0">COPY CODE</button>
   </div>
   <label>PLAYERS (2–4)</label>
-  <div class="mapinfo" id="lobbyMap"></div>
   <ul class="plist" id="plist"></ul>
+  <div class="row" id="addRow"><button id="btnAddBot" class="ghost" style="flex:1;margin-top:0"><i class="emo">🤖</i> + ADD BOT</button><button id="btnP2" class="ghost" style="flex:1;margin-top:0">+ PLAYER 2</button></div>
+  <div id="setBox">
+    <label>MAP SIZE</label>
+    <div class="seg" id="sizeSeg"><button data-v="S">CLASSIC<br><br>15×13</button><button data-v="M">LARGE<br><br>21×17</button><button data-v="L">HUGE<br><br>27×19</button></div>
+    <label>WINS TO TAKE THE MATCH</label>
+    <div class="seg" id="winsSeg"><button data-v="1">1</button><button data-v="2">2</button><button data-v="3">3</button><button data-v="4">4</button><button data-v="5">5</button></div>
+    <label>ROUND TIME</label>
+    <div class="seg" id="timeSeg"><button data-v="auto">AUTO</button><button data-v="90">1:30</button><button data-v="150">2:30</button><button data-v="240">4:00</button></div>
+    <label>CRATES</label>
+    <div class="seg" id="crateSeg"><button data-v="few">FEW</button><button data-v="normal">NORMAL</button><button data-v="many">MANY</button></div>
+    <label id="puLabel">POWER-UPS — CLICK TO TURN ONE OFF</label>
+    <div class="pugrid" id="puGrid"></div>
+  </div>
   <button id="btnStart" disabled>START MATCH</button>
   <button id="btnLeave" class="ghost">LEAVE</button>
   <div class="status" id="lobbyStatus"></div>
-  <div class="hint">Your colleague opens this same HTML file, types the code and presses JOIN. First to 3 round wins takes the match.</div>
+  <div class="hint" id="lobbyHint"></div>
 </div>
 
 <!-- GAME -->
@@ -187,8 +208,7 @@ const SIZES = {
   M: { w: 21, h: 17, time: 200, label: 'LARGE 21×17' },
   L: { w: 27, h: 19, time: 250, label: 'HUGE 27×19' },
 };
-let mapSize = 'M', roundTime = 200;
-try { const s = localStorage.getItem('bg-size'); if (SIZES[s]) mapSize = s; } catch (e) {}
+let roundTime = 200;
 const COLORS = ['#f8fafc', '#38bdf8', '#fb7185', '#a3e635'];
 const DARK   = ['#94a3b8', '#0369a1', '#be123c', '#4d7c0f'];
 const spawnPoints = () => [[1, 1], [W - 2, H - 2], [W - 2, 1], [1, H - 2]];
@@ -234,8 +254,41 @@ function buildSpiral() {
 const PU_TABLE = [['b', 10], ['f', 10], ['s', 7],
   ...['k', 't', 'g', 'r', 'p', 'u', 'v', 'h', 'w', 'l', 'm', 'x', 'o', 'j', 'y', 'i'].map(t => [t, 5]),
   ['d', 3], ['n', 3], ['e', 3]];
-const PU_TOTAL = PU_TABLE.reduce((a, [, w]) => a + w, 0);
-function randPU() { let r = Math.random() * PU_TOTAL; for (const [t, w] of PU_TABLE) if ((r -= w) < 0) return t; return 'b'; }
+function randPU(table = PU_TABLE) {
+  let r = Math.random() * table.reduce((a, [, w]) => a + w, 0);
+  for (const [t, w] of table) if ((r -= w) < 0) return t;
+  return table.length ? table[0][0] : null;
+}
+
+// ---- match settings (host / offline; guests get them in the lobby message) ----
+const PU_ALL = PU_TABLE.map(([t]) => t);
+const PU_ICON = { b: '💣', f: '🔥', s: '⚡', k: '👢', t: '🌀', g: '👻', r: '📡', p: '🎯', u: '♨️', v: '🛡️', h: '❤️', w: '🧱', l: '➖', m: '💥', x: '💀', o: '🧤', j: '🧨', y: '⭐', i: '👁️', d: '🔻', n: '⬇️', e: '🐢' };
+const PU_NAME = { b: '+1 BOMB', f: 'FIRE', s: 'SPEED', k: 'KICK', t: 'TELEPORT', g: 'GHOST', r: 'REMOTE', p: 'PIERCE', u: 'MAX FIRE', v: 'VEST', h: 'HEART', w: 'WALL PASS', l: 'LINE BOMB', m: 'POWER BOMB', x: 'SKULL', o: 'GLOVE', j: 'MINES', y: 'STAR BOMB', i: 'INVISIBLE', d: 'FIRE DOWN', n: 'BOMB DOWN', e: 'SPEED DOWN' };
+const DEFAULT_SET = { size: 'M', wins: 3, time: 'auto', crates: 'normal', off: [] };
+const TIME_OPTS = { auto: null, 90: 90, 150: 150, 240: 240 };
+const CRATE_P = { few: 0.55, normal: 0.75, many: 0.9 };
+function cleanSet(o) {
+  o = o && typeof o === 'object' ? o : {};
+  const wins = +o.wins;
+  return {
+    size: SIZES[o.size] ? o.size : DEFAULT_SET.size,
+    wins: wins >= 1 && wins <= 5 && Number.isInteger(wins) ? wins : DEFAULT_SET.wins,
+    time: String(o.time) in TIME_OPTS ? String(o.time) : DEFAULT_SET.time,
+    crates: o.crates in CRATE_P ? o.crates : DEFAULT_SET.crates,
+    off: Array.isArray(o.off) ? [...new Set(o.off.filter(t => PU_ALL.includes(t)))] : [],
+  };
+}
+let SET = (() => {
+  try {
+    const raw = JSON.parse(localStorage.getItem('bg-set') || 'null');
+    if (raw) return cleanSet(raw);
+    const old = localStorage.getItem('bg-size'); // map size saved by older versions
+    return cleanSet({ size: old });
+  } catch (e) { return cleanSet({}); }
+})();
+function saveSet() { try { localStorage.setItem('bg-set', JSON.stringify(SET)); } catch (e) { } }
+function roundTimeFor(set) { return TIME_OPTS[set.time] || SIZES[set.size].time; }
+function puTableFor(off) { return PU_TABLE.filter(([t]) => !off.includes(t)); }
 const MAX_RANGE = 8, REMOTE_FUSE = 8, VEST_TIME = 8, HIT_INV = 1.5, CURSE_TIME = 10, INVIS_TIME = 8, MINE_ARM = 1.0;
 const SOFT_TIME = 5;
 const PORTAL_COLORS = ['#c084fc', '#2dd4bf', '#fb923c'];
@@ -263,11 +316,11 @@ function newRound() {
     portals.push([a, b]);
     for (const [cx, cy] of [[x, y], [mx, my]]) for (const [dx, dy] of [[0,0],[1,0],[-1,0],[0,1],[0,-1]]) clear.add(idx(cx + dx, cy + dy));
   }
-  const hidden = new Map();
+  const hidden = new Map(), set = M.set || SET, table = puTableFor(set.off), crateP = CRATE_P[set.crates];
   for (let i = 0; i < grid.length; i++) {
-    if (grid[i] === '.' && !safe.has(i) && !clear.has(i) && Math.random() < 0.75) {
+    if (grid[i] === '.' && !safe.has(i) && !clear.has(i) && Math.random() < crateP) {
       grid[i] = '+';
-      if (Math.random() < 0.34) hidden.set(i, randPU());
+      if (table.length && Math.random() < 0.34) hidden.set(i, randPU(table));
     }
   }
   S = {
@@ -279,9 +332,9 @@ function newRound() {
 }
 
 // per-match stats kept on every M.players entry (host/local), sent to guests in snapshots as `sc`
-function newPl(name, keep) {
+function newPl(name, keep, bot) {
   const k = keep || {};
-  return { name, wins: k.wins || 0, kills: k.kills || 0, deaths: k.deaths || 0, selfK: k.selfK || 0, crates: k.crates || 0, items: k.items || 0 };
+  return { name, bot: bot || undefined, wins: k.wins || 0, kills: k.kills || 0, deaths: k.deaths || 0, selfK: k.selfK || 0, crates: k.crates || 0, items: k.items || 0 };
 }
 function stat(slot, key) { const pl = M && M.players[slot]; if (pl) pl[key] = (pl[key] || 0) + 1; }
 
@@ -665,7 +718,7 @@ function snapshot() {
     p: S.players.map(p => [+p.x.toFixed(3), +p.y.toFixed(3), p.alive ? 1 : 0, p.dir, +p.walk.toFixed(2), +Math.min(p.deathT, 9).toFixed(2), p.maxBombs, p.range, p.speed, p.kick ? 1 : 0, p.ghost ? 1 : 0, p.tele,
       (p.remote ? 1 : 0) | (p.pierce ? 2 : 0) | (p.softT > 0 ? 4 : 0) | (p.line ? 8 : 0), p.power, p.hp, +p.inv.toFixed(2), p.curse, Math.ceil(p.curseT),
       +p.invis.toFixed(2), (p.glove ? 1 : 0) | (p.star ? 2 : 0), p.mines, +p.softT.toFixed(2)]),
-    ph: S.phase, ct: +S.t.toFixed(2), tm: +S.time.toFixed(2), rt: roundTime, w: W, h: H, ban: S.banner, mid: M.id,
+    ph: S.phase, ct: +S.t.toFixed(2), tm: +S.time.toFixed(2), rt: roundTime, wt: M.target, w: W, h: H, ban: S.banner, mid: M.id,
     sc: M.players.map(q => [q.kills || 0, q.deaths || 0, q.selfK || 0, q.crates || 0, q.items || 0]),
     names: M.players.map(q => q.name), wins: M.players.map(q => q.wins), con: M.players.map(q => q.connected !== false),
   };
@@ -708,9 +761,14 @@ function findKey(code) {
   for (const set of ['a', 'b']) for (const act in KEYMAP[set]) if (KEYMAP[set][act].includes(code)) return { set, act };
   return null;
 }
-function slotForSet(set) { return mode === 'local' ? (set === 'a' ? 0 : 1) : 0; }
+let localHumans = 1;          // offline: 1 (vs bots, both key columns move you) or 2 (same keyboard)
+let lobbyBots = [];           // [{ level: 'easy' | 'normal' | 'hard' }] waiting in the lobby
+const splitKeys = () => mode === 'local' && localHumans === 2;
+function slotForSet(set) { return splitKeys() ? (set === 'a' ? 0 : 1) : 0; }
+// is this slot a human playing on this screen?
+function onThisScreen(slot) { return mode === 'local' ? slot < localHumans : slot === mySlot; }
 function dirState(li) {
-  const sets = mode === 'local' ? [li === 0 ? 'a' : 'b'] : ['a', 'b'];
+  const sets = splitKeys() ? [li === 0 ? 'a' : 'b'] : ['a', 'b'];
   const any = act => sets.some(s => KEYMAP[s][act].some(c => keys.has(c)));
   const st = localIn[li];
   st.up = any('up'); st.down = any('down'); st.left = any('left'); st.right = any('right');
@@ -796,7 +854,7 @@ addEventListener('keyup', e => { if (e.code === 'Tab') boardHeld = false; keys.d
 addEventListener('blur', () => { keys.clear(); boardHeld = false; sendGuestInput(); });
 
 function readLocalInputs() {
-  if (mode === 'local') { inputs[0] = dirState(0); inputs[1] = dirState(1); }
+  if (mode === 'local') { for (let i = 0; i < localHumans; i++) inputs[i] = dirState(i); }
   else if (mode === 'host') inputs[0] = dirState(0);
 }
 
@@ -1115,7 +1173,7 @@ function render(v, dt) {
   for (const [i, t] of v.pu) drawPU(i, t);
   for (const [i, k, t] of v.f) drawFlame(i, k, t);
   for (const [x, y, f, fl, z, own] of v.b) {
-    if (fl & 8) { if (mode === 'local' || own === mySlot) drawMine(x, y, true); continue; } // mines are hidden from opponents
+    if (fl & 8) { if (onThisScreen(own)) drawMine(x, y, true); continue; } // mines are hidden from opponents
     drawBomb(x, y, f, fl, z || 0);
   }
   for (const [x, y, t, c] of (v.fx || [])) {
@@ -1133,13 +1191,13 @@ function render(v, dt) {
     else { const k = 1 - Math.exp(-dt * 25); d.x += (p[0] - d.x) * k; d.y += (p[1] - d.y) * k; }
   });
   order.sort((a, b) => disp[a].y - disp[b].y);
-  const multi = mode !== 'local';
+  const multi = !splitKeys();
   for (const i of order) {
     const p = v.p[i];
     const rt = v.rt || roundTime;
     const args = [i, disp[i].x, disp[i].y, p[2], p[3], p[4], p[5], i === mySlot, multi && i === mySlot && (v.ph === 'count' || (v.ph === 'play' && v.tm > rt - 2)), p[10], p[15], p[16], (p[12] & 4) ? (p[21] || 1) : 0];
     if (p[2] && p[18] > 0) { // invisible: faint to yourself (or on a shared screen), almost nothing to opponents
-      const a = (mode === 'local' || i === mySlot) ? 0.35 : 0.05;
+      const a = onThisScreen(i) ? 0.35 : 0.05;
       const cx = disp[i].x * T + T / 2, cy = disp[i].y * T + T / 2;
       offCtx.setTransform(1, 0, 0, 1, 0, 0); offCtx.clearRect(0, 0, 112, 112);
       offCtx.setTransform(1, 0, 0, 1, 56 - cx, 60 - cy);
@@ -1233,7 +1291,7 @@ function updateHUD(v) {
   if (key === hudKey) return; hudKey = key;
   const cards = v.names.map((n, i) => {
     const p = v.p[i];
-    const stars = '★'.repeat(v.wins[i]) + '☆'.repeat(Math.max(0, WIN_TARGET - v.wins[i]));
+    const stars = '★'.repeat(v.wins[i]) + '☆'.repeat(Math.max(0, (v.wt || WIN_TARGET) - v.wins[i]));
     return `<div class="card ${p[2] ? '' : 'dead'}"><div class="nm"><span class="dot" style="background:${COLORS[i]}"></span>${esc(n)}${i === mySlot && mode !== 'local' ? ' (you)' : ''}${v.con[i] ? '' : ' ✖'}${v.sc && v.sc[i] ? `<span class="kc" title="kills / deaths">⚔${v.sc[i][0]}<span>/${v.sc[i][1]}</span></span>` : ''}</div>
       <div class="wins">${stars}</div><div class="st"><span><i class="emo">💣</i>${p[6]}</span><span><i class="emo">🔥</i>${p[7]}</span><span><i class="emo">⚡</i>${p[8]}</span>${p[9] ? '<span><i class="emo">👢</i></span>' : ''}${p[10] ? '<span><i class="emo">👻</i></span>' : ''}${p[11] ? `<span><i class="emo">🌀</i>${p[11]}</span>` : ''}${p[12] & 1 ? '<span><i class="emo">📡</i></span>' : ''}${p[12] & 2 ? '<span><i class="emo">🎯</i></span>' : ''}${p[12] & 4 ? `<span><i class="emo">🧱</i>${Math.ceil(p[21] || 0)}</span>` : ''}${p[12] & 8 ? '<span><i class="emo">➖</i></span>' : ''}${p[13] ? `<span><i class="emo">💥</i>${p[13]}</span>` : ''}${p[14] > 1 ? `<span><i class="emo">❤️</i>${p[14]}</span>` : ''}${p[15] > 0 && p[15] > HIT_INV ? `<span><i class="emo">🛡️</i>${Math.ceil(p[15])}</span>` : ''}${p[16] ? `<span style="color:#fb7185"><i class="emo">💀</i>${CURSE_LABEL[p[16]] || ''} ${p[17]}</span>` : ''}${p[19] & 1 ? '<span><i class="emo">🧤</i></span>' : ''}${p[19] & 2 ? '<span><i class="emo">⭐</i></span>' : ''}${p[20] ? `<span><i class="emo">🧨</i>${p[20]}</span>` : ''}${p[18] > 0 ? `<span><i class="emo">👁️</i>${Math.ceil(p[18])}</span>` : ''}</div></div>`;
   });
@@ -1316,14 +1374,28 @@ function frame(now) {
 requestAnimationFrame(frame);
 
 // ================== SCREENS ==================
-function renderSizeSeg() { document.querySelectorAll('#sizeSeg button').forEach(b => b.classList.toggle('on', b.dataset.s === mapSize)); }
-document.querySelectorAll('#sizeSeg button').forEach(b => b.onclick = () => {
-  mapSize = b.dataset.s; renderSizeSeg();
-  try { localStorage.setItem('bg-size', mapSize); } catch (e) {}
-});
-renderSizeSeg();
-function applyMapSize() { const z = SIZES[mapSize]; setSize(z.w, z.h); roundTime = z.time; }
-setSize(SIZES[mapSize].w, SIZES[mapSize].h);
+function applySet(set) { const z = SIZES[set.size]; setSize(z.w, z.h); roundTime = roundTimeFor(set); }
+setSize(SIZES[SET.size].w, SIZES[SET.size].h);
+
+// ---- settings box: editable for the host / offline, read-only for guests ----
+const SEGS = { sizeSeg: 'size', winsSeg: 'wins', timeSeg: 'time', crateSeg: 'crates' };
+function renderSet(set, editable) {
+  for (const [id, key] of Object.entries(SEGS)) document.querySelectorAll('#' + id + ' button').forEach(b => {
+    b.classList.toggle('on', String(set[key]) === b.dataset.v); b.disabled = !editable;
+  });
+  $('#puGrid').innerHTML = PU_ALL.map(t => `<button data-t="${t}" title="${PU_NAME[t]}" class="${set.off.includes(t) ? 'off' : ''}"${editable ? '' : ' disabled'}><i class="emo">${PU_ICON[t]}</i></button>`).join('');
+  $('#puLabel').textContent = editable ? 'POWER-UPS — CLICK TO TURN ONE OFF' : 'POWER-UPS';
+}
+function changeSet(key, val) {
+  if (mode === 'guest') return;
+  SET = cleanSet(Object.assign({}, SET, { [key]: val })); saveSet(); renderLobby();
+}
+for (const [id, key] of Object.entries(SEGS)) document.querySelectorAll('#' + id + ' button').forEach(b => b.onclick = () => changeSet(key, b.dataset.v));
+$('#puGrid').onclick = e => {
+  const b = e.target.closest && e.target.closest('button'); if (!b || b.disabled) return;
+  const t = b.dataset.t;
+  changeSet('off', SET.off.includes(t) ? SET.off.filter(x => x !== t) : SET.off.concat(t));
+};
 
 function show(id) { for (const s of ['menu', 'keys', 'pups', 'scores', 'lobby', 'game']) $('#' + s).classList.toggle('hidden', s !== id); }
 function getName() {
@@ -1348,16 +1420,18 @@ function enterGame() {
   show('game'); started = true; hudKey = ''; disp.length = 0; acc = 0; lastT = performance.now();
   const mv = s => ['up', 'left', 'down', 'right'].map(a => firstKey(s, a)).join('');
   const line = s => `${mv(s)} · ${firstKey(s, 'bomb')} bomb · ${firstKey(s, 'tele')} teleport · ${firstKey(s, 'det')} detonate`;
-  $('#controls').textContent = mode === 'local' ? `P1: ${line('a')}   |   P2: ${line('b')}` : `${line('a')}   |   ${line('b')}`;
+  $('#controls').textContent = splitKeys() ? `P1: ${line('a')}   |   P2: ${line('b')}` : `${line('a')}   |   ${line('b')}`;
 }
 
 // ---- Local ----
-$('#btnLocal').onclick = () => {
-  unlockAudio(); resetAll(); mode = 'local'; mySlot = 0;
-  const n = getName();
-  M = { players: [newPl(n === 'Player' ? 'Player 1' : n), newPl('Player 2')], target: WIN_TARGET, id: matchId() };
-  inputs = []; readLocalInputs(); applyMapSize(); newRound(); enterGame();
-};
+function openOfflineLobby(humans) {
+  unlockAudio(); resetAll(); mode = 'local'; mySlot = 0; getName();
+  localHumans = humans; lobbyBots = humans === 1 ? [{ level: 'normal' }] : [];
+  show('lobby'); lobbyStatus(''); menuStatus('');
+  renderLobby();
+}
+$('#btnLocal').onclick = () => openOfflineLobby(2);
+$('#btnBots').onclick = () => openOfflineLobby(1);
 
 // ---- Host ----
 function genCode() { const a = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; let s = ''; for (let i = 0; i < 5; i++) s += a[Math.random() * a.length | 0]; return s; }
@@ -1372,8 +1446,8 @@ function peerErrorText(err) {
 $('#btnHost').onclick = () => {
   unlockAudio();
   if (typeof Peer === 'undefined') { menuStatus('Online library failed to load — check your internet connection.'); return; }
-  resetAll(); mode = 'host'; mySlot = 0; getName();
-  show('lobby'); $('#hostBox').classList.remove('hidden'); $('#btnStart').classList.remove('hidden');
+  resetAll(); mode = 'host'; mySlot = 0; getName(); lobbyBots = [];
+  show('lobby');
   $('#roomCode').textContent = '·····'; lobbyStatus('Creating room…');
   startHostPeer();
   renderLobby();
@@ -1444,27 +1518,61 @@ function dropConn(entry) {
   if (!started) renderLobby();
 }
 function broadcast(msg) { for (const c of conns) if (c.open && c.conn.open) { try { c.conn.send(msg); } catch (e) { } } }
-function lobbyPlayers() { return [{ name: myName }].concat(conns.filter(c => c.open).map(c => ({ name: c.name }))); }
-function renderLobby(list) {
-  list = list || lobbyPlayers();
-  $('#plist').innerHTML = list.map((p, i) => `<li><span class="dot" style="background:${COLORS[i]}"></span>${esc(p.name)}${i === 0 ? ' (host)' : ''}</li>`).join('')
-    + (list.length < 2 ? '<li style="color:var(--dim)">Waiting for players…</li>' : '');
-  if (mode === 'host') {
-    $('#btnStart').disabled = list.length < 2;
-    broadcast({ t: 'lobby', players: list.map(p => p.name), size: SIZES[mapSize].label });
-    $('#lobbyMap').textContent = 'MAP: ' + SIZES[mapSize].label;
-  }
+const LEVEL_LABEL = { easy: 'EASY', normal: 'NORMAL', hard: 'HARD' };
+const botName = j => 'BOT ' + (j + 1);
+function localName(i) { return localHumans === 1 ? myName : i === 0 ? (myName === 'Player' ? 'Player 1' : myName) : 'Player 2'; }
+// who is in the lobby, in slot order
+function lobbyList() {
+  const bots = lobbyBots.map((b, j) => ({ name: botName(j), kind: 'bot', level: b.level }));
+  if (mode === 'local') return Array.from({ length: localHumans }, (_, i) => ({ name: localName(i), kind: 'local' })).concat(bots);
+  return [{ name: myName, kind: 'host' }].concat(conns.filter(c => c.open).map(c => ({ name: c.name, kind: 'guest' })), bots);
 }
+// guests pass the host's list + settings; the host / offline render their own
+function renderLobby(list, set) {
+  const own = !list; list = list || lobbyList(); set = set || SET;
+  const edit = own && mode !== 'guest';
+  $('#lobbyTitle').textContent = mode === 'local' ? 'MATCH SETUP' : 'LOBBY';
+  $('#hostBox').classList.toggle('hidden', mode !== 'host');
+  $('#btnStart').classList.toggle('hidden', !edit);
+  $('#addRow').classList.toggle('hidden', !edit);
+  $('#btnP2').classList.toggle('hidden', mode !== 'local');
+  $('#btnP2').innerHTML = localHumans === 2 ? '✖ PLAYER 2' : '+ PLAYER 2';
+  $('#btnAddBot').disabled = list.length >= MAX_PLAYERS;
+  $('#btnP2').disabled = localHumans === 1 && list.length >= MAX_PLAYERS;
+  $('#plist').innerHTML = list.map((p, i) => {
+    const tag = p.kind === 'host' ? ' (host)' : p.kind === 'local' && localHumans === 2 ? ` (${i === 0 ? 'left keys' : 'right keys'})` : '';
+    if (p.kind !== 'bot') return `<li><span class="dot" style="background:${COLORS[i]}"></span>${esc(p.name)}${tag}</li>`;
+    const j = i - (list.length - list.filter(q => q.kind === 'bot').length);
+    return `<li class="bot" data-bot="${j}" title="${edit ? 'Click to change difficulty' : ''}"><span class="dot" style="background:${COLORS[i]}"></span><i class="emo">🤖</i> ${esc(p.name)}<span class="lv">${LEVEL_LABEL[p.level] || ''}</span>${edit ? `<button class="x" data-del="${j}" title="Remove bot">✖</button>` : ''}</li>`;
+  }).join('') + (list.length < 2 ? '<li style="color:var(--dim)">Waiting for players…</li>' : '');
+  renderSet(set, edit);
+  $('#lobbyHint').textContent = mode === 'local'
+    ? (localHumans === 2 ? 'Same keyboard: left column of CONTROLS is player 1, right column is player 2.' : 'Both key columns of CONTROLS move you.')
+    : 'Your colleague opens this same HTML file, types the code and presses JOIN.';
+  if (edit) $('#btnStart').disabled = list.length < 2;
+  if (mode === 'host') broadcast({ t: 'lobby', players: list.map(p => ({ name: p.name, bot: p.level })), set: SET });
+}
+$('#btnP2').onclick = () => {
+  if (mode !== 'local') return;
+  localHumans = localHumans === 2 ? 1 : 2;
+  if (localHumans + lobbyBots.length > MAX_PLAYERS) lobbyBots.pop();
+  renderLobby();
+};
+// Slots: offline → humans then bots; online → host, guests, bots. Also used for rematches (R).
 function startMatch() {
-  if (mode === 'local') { M.players = M.players.map(p => newPl(p.name)); M.id = matchId(); newRound(); return; }
-  const open = conns.filter(c => c.open);
-  if (open.length < 1) { // everyone left: back to lobby
-    started = false; show('lobby'); renderLobby(); lobbyStatus('Your colleague left. Waiting for players…'); return;
+  const set = cleanSet(SET), bots = lobbyBots.map((b, j) => newPl(botName(j), null, b.level));
+  if (mode === 'local') {
+    M = { players: Array.from({ length: localHumans }, (_, i) => newPl(localName(i))).concat(bots), target: set.wins, set, id: matchId() };
+  } else {
+    const open = conns.filter(c => c.open);
+    if (open.length < 1 && !bots.length) { // everyone left: back to lobby
+      started = false; show('lobby'); renderLobby(); lobbyStatus('Your colleague left. Waiting for players…'); return;
+    }
+    open.forEach((c, i) => c.slot = i + 1);
+    M = { players: [newPl(myName)].concat(open.map(c => newPl(c.name)), bots), target: set.wins, set, id: matchId() };
+    open.forEach(c => c.conn.send({ t: 'start', slot: c.slot }));
   }
-  open.forEach((c, i) => c.slot = i + 1);
-  M = { players: [newPl(myName)].concat(open.map(c => newPl(c.name))), target: WIN_TARGET, id: matchId() };
-  inputs = []; readLocalInputs(); applyMapSize();
-  open.forEach(c => c.conn.send({ t: 'start', slot: c.slot }));
+  inputs = []; readLocalInputs(); applySet(set);
   newRound(); enterGame();
 }
 $('#btnStart').onclick = () => { unlockAudio(); startMatch(); };
@@ -1491,7 +1599,7 @@ $('#btnJoin').onclick = () => {
     hostConn.on('open', () => {
       clearTimeout(timeout);
       hostConn.send({ t: 'hello', name: myName });
-      show('lobby'); $('#hostBox').classList.add('hidden'); $('#btnStart').classList.add('hidden');
+      show('lobby'); renderLobby([{ name: '…', kind: 'host' }, { name: myName, kind: 'guest' }]);
       lobbyStatus(''); menuStatus('');
     });
     hostConn.on('data', d => {
@@ -1500,7 +1608,11 @@ $('#btnJoin').onclick = () => {
       if (d.t === 'pong') { const r = performance.now() - d.c; myPing = myPing ? myPing * 0.6 + r * 0.4 : r; return; }
       if (d.t === 'reject') toMenu(d.why);
       else if (d.t === 'bye') toMenu('The host closed the game.');
-      else if (d.t === 'lobby') { renderLobby(d.players.map(n => ({ name: n }))); $('#lobbyMap').textContent = d.size ? 'MAP: ' + d.size : ''; lobbyStatus('Waiting for the host to start…'); }
+      else if (d.t === 'lobby') {
+        const list = (d.players || []).map((p, i) => typeof p === 'string' ? { name: p, kind: i ? 'guest' : 'host' }
+          : { name: String(p.name), kind: p.bot ? 'bot' : i ? 'guest' : 'host', level: p.bot });
+        renderLobby(list, cleanSet(d.set)); lobbyStatus('Waiting for the host to start…');
+      }
       else if (d.t === 'start') { mySlot = d.slot; joinedLate = !!d.late; localIn[0].bombSeq = 0; localIn[0].teleSeq = 0; localIn[0].detSeq = 0; lastSent = ''; lastSnapQ = -1; lastSnapAt = performance.now(); view = null; enterGame(); sendGuestInput(); }
       else if (d.t === 's') {
         if (d.ev) playEvents(d.ev);
