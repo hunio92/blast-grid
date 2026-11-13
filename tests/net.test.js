@@ -103,3 +103,50 @@ test('guest frames render with the predicted view', () => {
   link.step(300, l => l.guest.run('render(__dv, 1 / 60)'));
   assert.ok(link.guest.run("__els.get('hud').innerHTML").includes('(you)'));
 });
+
+// ---- interpolation of other players / moving bombs ----
+function openTopRow(link) {
+  link.host.run(`for (let x = 1; x < W - 1; x++) { const i = idx(x, 1); S.grid[i] = '.'; S.hidden.delete(i); S.pu.delete(i); }`);
+}
+
+test('interpolation is monotonic under jitter', () => {
+  const link = ready({ latency: [40, 160], seed: 5 });
+  openTopRow(link);
+  link.host.run("keys.add('KeyD')"); // the host walks its own player (slot 0) right along the top row
+  const xs = [];
+  link.step(2000, l => xs.push(l.guestPos(0)[0]));
+  const maxStep = 3 * 3.2 / 60;
+  for (let k = 1; k < xs.length; k++) {
+    assert.ok(xs[k] >= xs[k - 1] - 1e-9, `went back at frame ${k}: ${xs[k - 1]} → ${xs[k]}`);
+    assert.ok(xs[k] - xs[k - 1] <= maxStep, `jumped at frame ${k}: ${xs[k - 1]} → ${xs[k]}`);
+  }
+  assert.ok(xs[xs.length - 1] - xs[0] > 3, 'it did move');
+});
+
+test('interpolation delay adapts to jitter', () => {
+  let link = ready({ latency: [100, 100] });
+  link.step(1000);
+  const steady = link.guest.run('interpDelay');
+  link = ready({ latency: [40, 160], seed: 9 });
+  link.step(1000);
+  const jittery = link.guest.run('interpDelay');
+  assert.ok(steady >= 40 && steady < 60, 'steady ' + steady);
+  assert.ok(jittery > 100 && jittery <= 160, 'jittery ' + jittery);
+});
+
+test('sliding bomb moves smoothly', () => {
+  const link = ready({ latency: [40, 160], seed: 11 });
+  openTopRow(link);
+  // a bomb is always placed standing still and only later kicked into a slide
+  link.host.run(`S.bombs.push({ x: 2, y: 1, fuse: 30, owner: 0, range: 1, pass: new Set(), dead: false, vx: 0, vy: 0, prog: 0 });
+    S.players[0].x = 1; S.players[0].y = 3;`);
+  link.step(400);
+  link.host.run('S.bombs.find(b => b.y === 1).vx = 1;');
+  const xs = [];
+  link.step(1200, l => { const b = l.guest.run('__dv && __dv.b.find(b => b[5] === 0 && Math.round(b[1]) === 1)'); if (b) xs.push(b[0]); });
+  assert.ok(xs.length > 30 && xs[xs.length - 1] - xs[0] > 4, 'bomb slid: ' + xs[0] + ' → ' + xs[xs.length - 1]);
+  for (let k = 1; k < xs.length; k++) {
+    assert.ok(xs[k] >= xs[k - 1] - 1e-9, `went back at ${k}`);
+    assert.ok(xs[k] - xs[k - 1] <= 3 * 9 / 60, `jumped at ${k}: ${xs[k - 1]} → ${xs[k]}`);
+  }
+});
