@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
 <title>Blast Grid</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
@@ -83,6 +83,40 @@
   .pu-r b{color:var(--text);font-weight:normal}
   .pu-r span:last-child{color:var(--dim)}
   .pu-i .emo{font-size:16px}
+
+  /* ---- touch (phones held sideways) ---- */
+  #touch,#tbar,#rotate{display:none}
+  body.touch input{font-size:16px} /* stops phones zooming in on focus */
+  body.touch.ingame{padding:0;overflow:hidden;touch-action:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+  body.touch #game{gap:2px;touch-action:none}
+  body.touch #foot{display:none}
+  body.touch #hud{gap:4px;flex-wrap:nowrap;width:calc(100vw - 116px);max-width:none;overflow:hidden;align-self:flex-start;margin:4px 0 0 6px}
+  body.touch .card{flex:1 1 0;max-width:230px;flex-direction:row;align-items:center;gap:5px;padding:2px 5px;min-width:0;border-width:2px;font-size:8px;overflow:hidden}
+  body.touch .card .nm{flex:1 1 auto;min-width:40px;max-width:none}
+  body.touch .card .wins,body.touch .card .st{flex:none}
+  body.touch .card .st{gap:4px}
+  body.touch .card .kc{display:none}
+  body.touch .card .st span:nth-child(n+3){display:none}
+  body.touch .timer{padding:2px 8px;font-size:11px;border-width:2px}
+  body.touch canvas{width:min(100vw,calc((100vh - 34px) * var(--ar)));width:min(100vw,calc((100dvh - 34px) * var(--ar)));border-width:2px;box-shadow:none}
+  body.touch #touch{display:block}
+  body.touch #tbar{display:flex}
+  #tbar{position:fixed;top:6px;right:8px;flex-direction:column;align-items:stretch;gap:6px;z-index:5;width:96px}
+  #tbar button{width:100%;margin:0;padding:7px 4px;font-size:8px;background:rgba(20,27,47,.85);color:var(--text);border:2px solid var(--line);box-shadow:none}
+  #tbar button.on{color:var(--accent);border-color:var(--accent)}
+  #stickZone{position:fixed;left:0;top:40px;bottom:0;width:45vw;z-index:4;touch-action:none}
+  #stickBase{position:absolute;width:120px;height:120px;margin:-60px 0 0 -60px;border-radius:50%;border:3px solid rgba(230,235,255,.35);background:rgba(20,27,47,.35);display:none;pointer-events:none}
+  #stickKnob{position:absolute;left:50%;top:50%;width:54px;height:54px;margin:-27px 0 0 -27px;border-radius:50%;background:rgba(255,176,32,.75);border:3px solid #000}
+  #stickHint{position:fixed;left:18px;bottom:18px;width:110px;height:110px;border-radius:50%;border:3px dashed rgba(230,235,255,.18);pointer-events:none;z-index:3}
+  #tBtns{position:fixed;right:12px;bottom:12px;z-index:4;display:grid;grid-template-columns:auto auto;grid-template-areas:"tele det" "bomb bomb";gap:10px;justify-items:end}
+  #tBtns button{margin:0;width:56px;height:56px;padding:0;border-radius:50%;font-size:8px;touch-action:none;box-shadow:0 3px 0 #000;opacity:.9}
+  #tBtns button.down{transform:translateY(2px);filter:brightness(1.3)}
+  #tBomb{grid-area:bomb;width:84px!important;height:84px!important;font-size:10px!important}
+  #tTele{grid-area:tele;background:#a78bfa}
+  #tDet{grid-area:det;background:#22d3ee}
+  #rotate{position:fixed;inset:0;z-index:20;background:var(--bg);flex-direction:column;align-items:center;justify-content:center;gap:18px;text-align:center;font-size:11px;line-height:2;padding:24px}
+  #rotate .emo{font-size:48px}
+  @media (orientation: portrait){ body.touch.ingame #rotate{display:flex} }
 </style>
 </head>
 <body>
@@ -196,7 +230,16 @@
     <span>TAB: SCORES · M: SOUND</span>
     <button id="btnQuit" class="ghost">QUIT</button>
   </div>
+  <div id="tbar">
+    <button id="tScores">SCORES</button><button id="tSound">SOUND</button><button id="tRematch" class="hidden">REMATCH</button><button id="tQuit">QUIT</button>
+  </div>
+  <div id="touch">
+    <div id="stickHint"></div>
+    <div id="stickZone"><div id="stickBase"><div id="stickKnob"></div></div></div>
+    <div id="tBtns"><button id="tTele">TELE</button><button id="tDet">DET</button><button id="tBomb">BOMB</button></div>
+  </div>
 </div>
+<div id="rotate"><i class="emo">📱↻</i>TURN YOUR PHONE SIDEWAYS<br>to keep playing</div>
 
 <script>
 "use strict";
@@ -1083,7 +1126,8 @@ function dirState(li) {
   const sets = splitKeys() ? [li === 0 ? 'a' : 'b'] : ['a', 'b'];
   const any = act => sets.some(s => KEYMAP[s][act].some(c => keys.has(c)));
   const st = localIn[li];
-  st.up = any('up'); st.down = any('down'); st.left = any('left'); st.right = any('right');
+  const t = li === 0 ? touchDir : {};
+  st.up = any('up') || !!t.up; st.down = any('down') || !!t.down; st.left = any('left') || !!t.left; st.right = any('right') || !!t.right;
   return st;
 }
 function sendGuestInput() {
@@ -1163,11 +1207,68 @@ addEventListener('keydown', e => {
   sendGuestInput();
 });
 addEventListener('keyup', e => { if (e.code === 'Tab') boardHeld = false; keys.delete(e.code); sendGuestInput(); });
-addEventListener('blur', () => { keys.clear(); boardHeld = false; sendGuestInput(); });
+addEventListener('blur', () => { keys.clear(); boardHeld = false; clearTouch(); sendGuestInput(); });
 
 function readLocalInputs() {
   if (mode === 'local') { for (let i = 0; i < localHumans; i++) inputs[i] = dirState(i); }
   else if (mode === 'host') inputs[0] = dirState(0);
+}
+
+// ---- touch controls (always player 1 of this screen) ----
+const touchDir = { up: false, down: false, left: false, right: false };
+const STICK_R = 60, DEAD = 0.35;
+// dx, dy: stick offset as a fraction of its radius (−1…1). 4-way: the bigger axis wins.
+function setTouchStick(dx, dy) {
+  touchDir.up = touchDir.down = touchDir.left = touchDir.right = false;
+  if (Math.hypot(dx, dy) >= DEAD) {
+    if (Math.abs(dx) >= Math.abs(dy)) { touchDir[dx < 0 ? 'left' : 'right'] = true; localIn[0].pri = 'h'; }
+    else { touchDir[dy < 0 ? 'up' : 'down'] = true; localIn[0].pri = 'v'; }
+  }
+  sendGuestInput();
+}
+function touchPress(act) { localIn[0][act + 'Seq']++; sendGuestInput(); }
+function clearTouch() { touchDir.up = touchDir.down = touchDir.left = touchDir.right = false; stickId = null; const b = $('#stickBase'); if (b) b.style.display = 'none'; }
+let stickId = null, stickO = null;
+function enableTouch() { document.body.classList.add('touch'); }
+try { if (matchMedia('(pointer: coarse)').matches) enableTouch(); } catch (e) { }
+addEventListener('touchstart', enableTouch, { passive: true });
+try { matchMedia('(orientation: portrait)').addEventListener('change', () => { clearTouch(); boardHeld = false; sendGuestInput(); }); } catch (e) { }
+{
+  const zone = $('#stickZone'), base = $('#stickBase'), knob = $('#stickKnob');
+  const move = e => {
+    let dx = (e.clientX - stickO.x) / STICK_R, dy = (e.clientY - stickO.y) / STICK_R;
+    const m = Math.hypot(dx, dy); if (m > 1) { dx /= m; dy /= m; }
+    knob.style.transform = `translate(${dx * STICK_R * 0.6}px,${dy * STICK_R * 0.6}px)`;
+    setTouchStick(dx, dy);
+  };
+  zone.addEventListener('pointerdown', e => {
+    e.preventDefault(); unlockAudio();
+    stickId = e.pointerId; stickO = { x: e.clientX, y: e.clientY };
+    try { zone.setPointerCapture(e.pointerId); } catch (err) { }
+    base.style.left = e.clientX + 'px'; base.style.top = e.clientY - zone.getBoundingClientRect().top + 'px'; base.style.display = 'block';
+    knob.style.transform = '';
+  });
+  zone.addEventListener('pointermove', e => { if (e.pointerId === stickId) { e.preventDefault(); move(e); } });
+  const end = e => { if (e.pointerId === stickId) { clearTouch(); sendGuestInput(); } };
+  zone.addEventListener('pointerup', end); zone.addEventListener('pointercancel', end);
+  for (const [id, act] of [['#tBomb', 'bomb'], ['#tTele', 'tele'], ['#tDet', 'det']]) {
+    const b = $(id);
+    b.addEventListener('pointerdown', e => { e.preventDefault(); unlockAudio(); b.classList.add('down'); touchPress(act); });
+    for (const t of ['pointerup', 'pointercancel', 'pointerleave']) b.addEventListener(t, () => b.classList.remove('down'));
+  }
+  const sc = $('#tScores');
+  sc.addEventListener('pointerdown', e => { e.preventDefault(); boardHeld = true; });
+  for (const t of ['pointerup', 'pointercancel', 'pointerleave']) sc.addEventListener(t, () => { boardHeld = false; });
+  $('#tSound').onclick = () => { unlockAudio(); toggleMute(); };
+  $('#tRematch').onclick = () => { if (view && view.ph === 'match' && mode !== 'guest') startMatch(); };
+  $('#tQuit').onclick = () => { if (confirm('Quit to the main menu?')) toMenu(''); };
+}
+let tbarKey = '';
+function updateTouchBar(v) {
+  const k = (muted ? 1 : 0) + ':' + (v.ph === 'match' && mode !== 'guest' ? 1 : 0);
+  if (k === tbarKey) return; tbarKey = k;
+  $('#tSound').textContent = muted ? 'SOUND OFF' : 'SOUND ON'; $('#tSound').classList.toggle('on', !muted);
+  $('#tRematch').classList.toggle('hidden', !(v.ph === 'match' && mode !== 'guest'));
 }
 
 // ================== AUDIO ==================
@@ -1522,11 +1623,11 @@ function render(v, dt) {
   else if (v.ph === 'play' && v.tm > (v.rt || roundTime) - 0.7) bigText('GO!', '#a3e635');
   else if (v.ph === 'round') drawBoard(v, v.ban, 'Next round starting…');
   else if (mode === 'guest' && joinedLate && v.ph !== 'match') banner('YOU JOINED', 'You\'ll play from the next round — watch for now', '#38bdf8');
-  else if (v.ph === 'match') drawBoard(v, v.ban, mode === 'guest' ? 'Waiting for the host to start a rematch…' : 'Press R for a rematch');
+  else if (v.ph === 'match') drawBoard(v, v.ban, mode === 'guest' ? 'Waiting for the host to start a rematch…' : document.body.classList.contains('touch') ? 'Tap REMATCH to play again' : 'Press R for a rematch');
   if ((v.ph === 'play' || v.ph === 'grace') && v.tm <= 0 && v.tm > -2) banner('SUDDEN DEATH!', null, '#fb7185');
-  if (boardHeld && v.ph !== 'round' && v.ph !== 'match') drawBoard(v, 'SCOREBOARD', 'Release TAB to play');
+  if (boardHeld && v.ph !== 'round' && v.ph !== 'match') drawBoard(v, 'SCOREBOARD', document.body.classList.contains('touch') ? 'Let go of SCORES to play' : 'Release TAB to play');
   if (v.ph === 'match') recordMatch(v);
-  updateHUD(v);
+  updateHUD(v); updateTouchBar(v);
 }
 
 // ---- scoreboard ----
@@ -1712,7 +1813,9 @@ $('#puGrid').onclick = e => {
   changeSet('off', SET.off.includes(t) ? SET.off.filter(x => x !== t) : SET.off.concat(t));
 };
 
-function show(id) { for (const s of ['menu', 'keys', 'pups', 'scores', 'lobby', 'game']) $('#' + s).classList.toggle('hidden', s !== id); }
+function show(id) {
+  document.body.classList.toggle('ingame', id === 'game');
+  if (id !== 'game') clearTouch(); for (const s of ['menu', 'keys', 'pups', 'scores', 'lobby', 'game']) $('#' + s).classList.toggle('hidden', s !== id); }
 function getName() {
   const n = ($('#name').value.trim() || 'Player').slice(0, 12);
   myName = n; try { localStorage.setItem('bg-name', n); } catch (e) { }
