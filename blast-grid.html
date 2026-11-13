@@ -326,7 +326,7 @@ function newRound() {
   S = {
     grid, hidden, pu: new Map(), bombs: [], flames: new Map(), fx: [], portals, portalAt: new Map(portals.flatMap(([a, b]) => [[a, b], [b, a]])),
     players: M.players.map((pl, i) => makePlayer(i, pl.connected !== false)),
-    phase: 'count', t: 3, time: roundTime, spiral: buildSpiral(), sdT: 0, banner: '',
+    phase: 'count', t: 3, time: roundTime, spiral: buildSpiral(), sdT: 0, banner: '', bots: {},
   };
   S.sdStep = Math.min(0.14, 24 / (S.spiral.length * 0.75)); // sudden death takes ~24s whatever the map size
 }
@@ -620,6 +620,7 @@ function tick(dt) {
     S.bombs = S.bombs.filter(b => !b.dead);
   }
 
+  for (const p of S.players) if (p.alive && M.players[p.slot] && M.players[p.slot].bot) botThink(p, dt);
   for (const p of S.players) {
     if (!p.alive) continue;
     const inp = inputs[p.slot] || {};
@@ -720,8 +721,319 @@ function snapshot() {
       +p.invis.toFixed(2), (p.glove ? 1 : 0) | (p.star ? 2 : 0), p.mines, +p.softT.toFixed(2)]),
     ph: S.phase, ct: +S.t.toFixed(2), tm: +S.time.toFixed(2), rt: roundTime, wt: M.target, w: W, h: H, ban: S.banner, mid: M.id,
     sc: M.players.map(q => [q.kills || 0, q.deaths || 0, q.selfK || 0, q.crates || 0, q.items || 0]),
-    names: M.players.map(q => q.name), wins: M.players.map(q => q.wins), con: M.players.map(q => q.connected !== false),
+    names: M.players.map(q => q.name), bt: M.players.map(q => q.bot || ''), wins: M.players.map(q => q.wins), con: M.players.map(q => q.connected !== false),
   };
+}
+
+// ================== BOTS ==================
+// Bots run on the host / offline sim only. Each tick they write the same input object a human produces into
+// inputs[slot], so the rules, the snapshots and the guests don't know or care that a player is a bot.
+const BOT_LEVELS = {
+  // blunder: chance to drop a bomb without checking the way out
+  easy:   { react: 0.5,  chain: false, avoidBad: false, hunt: 0.1, remote: false, tele: false, blunder: 0.08 },
+  normal: { react: 0.25, chain: true,  avoidBad: true,  hunt: 0.5, remote: true,  tele: false, blunder: 0 },
+  hard:   { react: 0.08, chain: true,  avoidBad: true,  hunt: 1,   remote: true,  tele: true,  blunder: 0 },
+};
+const BOT_CYCLE = { easy: 'normal', normal: 'hard', hard: 'easy' };
+const BAD_PU = new Set(['d', 'n', 'e', 'x']);
+const DIRS4 = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+const DIRS8 = DIRS4.concat([[1, 1], [1, -1], [-1, 1], [-1, -1]]);
+
+// Tiles a blast from v = { x, y, range, pierce, star } reaches on the current grid. bombAt(i) says whether a bomb sits
+// on tile i (the blast stops there and sets it off). Returns { tiles, hitBombs, crates }.
+function blastFrom(v, bombAt) {
+  const tiles = [idx(v.x, v.y)], hitBombs = [], crates = [];
+  for (const [dx, dy] of v.star ? DIRS8 : DIRS4) {
+    const diag = dx !== 0 && dy !== 0, maxR = diag ? Math.max(1, Math.ceil(v.range / 2)) : v.range;
+    for (let r = 1; r <= maxR; r++) {
+      const x = v.x + dx * r, y = v.y + dy * r;
+      if (x < 0 || y < 0 || x >= W || y >= H) break;
+      const i = idx(x, y), c = S.grid[i];
+      if (c === '#') { if (diag && x > 0 && y > 0 && x < W - 1 && y < H - 1) continue; break; }
+      tiles.push(i);
+      if (c === '+') { crates.push(i); if (v.pierce) continue; break; }
+      if (bombAt(i)) { hitBombs.push(i); break; }
+      // a power-up stops a real blast, but anyone may pick it up first: plan as if the blast goes through
+    }
+  }
+  return { tiles, hitBombs, crates };
+}
+
+// The bombs a bot knows about, as plain records. Enemy mines are hidden; its own mines only go off when a blast reaches
+// them, so they start at t = Infinity and only the chain pass gives them a time.
+function visibleBombs(forSlot) {
+  return S.bombs.filter(b => !b.dead && (!b.mine || b.owner === forSlot)).map(b => {
+    if (b.mine) return { x: b.x, y: b.y, range: b.range, pierce: false, star: false, t: Infinity, own: true, mine: true };
+    const land = b.fly ? { x: b.fly.tx, y: b.fly.ty } : { x: b.x, y: b.y };
+    const t = b.fly ? Math.max(b.fuse, b.fly.dur - b.fly.t) : b.fuse;
+    // someone else's remote bomb can go off any moment: its blast is "risky" (fine to cross, not to stay in)
+    return { x: land.x, y: land.y, range: b.range, pierce: b.pierce, star: b.star, t, own: b.owner === forSlot, risky: b.remote && b.owner !== forSlot };
+  });
+}
+
+// Seconds until each tile burns: 0 = burning now, Infinity = safe. extra: virtual bombs (same record shape).
+// D.perm marks tiles that sudden death will fill (deadly forever from that time on); D.risky marks tiles in the blast
+// of someone else's remote bomb.
+function dangerMap(forSlot, chain, extra = []) {
+  const D = new Float32Array(W * H).fill(Infinity), perm = new Uint8Array(W * H), risky = new Uint8Array(W * H);
+  const list = visibleBombs(forSlot).concat(extra.map(e => Object.assign({}, e)));
+  const at = new Map(); list.forEach((v, k) => { const i = idx(v.x, v.y); (at.get(i) || at.set(i, []).get(i)).push(k); });
+  const blasts = list.map(v => blastFrom(v, i => at.has(i))); // any bomb or known mine stops a blast and goes off
+  if (chain || list.some(v => v.mine)) { // own mines are always chained: they only ever go off that way // a blast that reaches another bomb sets it off: relax the fuse times until nothing changes
+    for (let changed = true, n = 0; changed && n <= list.length; n++) {
+      changed = false;
+      list.forEach((v, k) => {
+        const hits = blasts[k].hitBombs.concat([idx(v.x, v.y)]);
+        for (const i of hits) for (const j of at.get(i) || []) if (list[j].t > v.t) { list[j].t = v.t; changed = true; }
+      });
+    }
+  }
+  list.forEach((v, k) => { for (const i of blasts[k].tiles) { if (v.t < D[i]) D[i] = v.t; if (v.risky) risky[i] = 1; } });
+  for (const i of S.flames.keys()) D[i] = 0;
+  if (S.time < 5) { // sudden death: the next tiles of the spiral become walls
+    let k = 0;
+    for (const [x, y] of S.spiral) {
+      const i = idx(x, y); if (S.grid[i] === '#') continue;
+      const T = Math.max(0, S.time) + k * S.sdStep; if (T > 6) break;
+      if (T < D[i] || !perm[i]) { D[i] = Math.min(D[i], T); perm[i] = 1; }
+      k++;
+    }
+  }
+  D.perm = perm; D.risky = risky;
+  return D;
+}
+
+function botLevel(p) { return BOT_LEVELS[M.players[p.slot] && M.players[p.slot].bot] || BOT_LEVELS.normal; }
+const tileOf = p => idx(Math.round(p.x), Math.round(p.y));
+function stepTime(p) { const mult = p.curse === 'slow' ? 0.5 : p.curse === 'rush' ? 1.8 : 1; return 1 / ((3.2 + 0.55 * p.speed) * mult); }
+function bombRange(p) { return p.power > 0 ? MAX_RANGE : p.curse === 'weak' ? 1 : p.range; }
+
+const seen = (D, i) => D[i];
+const safeForever = (D, i, lv) => seen(D, i, lv) === Infinity && !D.risky[i];
+const safeForNow = (D, i) => D[i] === Infinity;
+// Safety margins (seconds): plan conservatively, execute with what's left.
+const M_ESCAPE = 0.12, M_PLACE = 0.4, M_GOAL = 0.5;
+// Is it safe to be on tile i between times a and b?
+function safeAt(D, i, a, b, lv, m) {
+  const d = seen(D, i, lv);
+  if (d === Infinity) return true;
+  if (D.perm[i]) return b < d - m;
+  return b < d - m || a > d + FLAME_T + m;
+}
+
+// BFS over tiles the bot can walk on, keeping only tiles that are safe while the bot passes them. Times are measured
+// from the bot's real position when it starts on its own tile (it may be partway across). blockedTiles: tiles with
+// bombs. m: safety margin. Returns { prev, dist, order }.
+function botBFS(p, lv, D, t0, start, blockedTiles, m = M_ESCAPE) {
+  const stepT = stepTime(p), prev = new Int32Array(W * H).fill(-1), dist = new Int16Array(W * H).fill(-1), order = [start];
+  const enter = new Float32Array(W * H), fromBody = start === tileOf(p);
+  dist[start] = 0; enter[start] = t0;
+  for (let q = 0; q < order.length; q++) {
+    const i = order[q], k = dist[i], x = i % W, y = (i / W) | 0;
+    for (const [dx, dy] of DIRS4) {
+      const nx = x + dx, ny = y + dy; if (nx < 1 || ny < 1 || nx > W - 2 || ny > H - 2) continue;
+      const n = idx(nx, ny);
+      if (dist[n] >= 0 || S.grid[n] !== '.' || S.portalAt.has(n)) continue;
+      if (blockedTiles.has(n) && !p.ghost) continue;
+      if (lv.avoidBad && BAD_PU.has(S.pu.get(n))) continue;
+      const tA = k === 0 ? t0 + Math.max(0, (fromBody ? Math.abs(nx - p.x) + Math.abs(ny - p.y) : 1) - 0.5) * stepT : enter[i] + stepT;
+      if (!safeAt(D, n, tA, tA + stepT * 1.1, lv, m)) continue;
+      dist[n] = k + 1; prev[n] = i; enter[n] = tA; order.push(n);
+    }
+  }
+  return { prev, dist, order };
+}
+function pathTo(bfs, goal) { const out = []; for (let i = goal; bfs.dist[i] > 0; i = bfs.prev[i]) out.push(i); return out.reverse(); }
+function bombTileSet(extra = []) {
+  const s = new Set(S.bombs.filter(b => !b.dead && !b.mine).map(b => b.fly ? idx(b.fly.tx, b.fly.ty) : idx(b.x, b.y)));
+  for (const e of extra) s.add(idx(e.x, e.y));
+  return s;
+}
+
+// Opponents a bot may target: alive, not on its team (no teams), and visible
+function visibleFoes(p) { return S.players.filter(q => q.alive && q.slot !== p.slot && !(q.invis > 0)); }
+
+// The bombs placing one at tile `at` would add (line bomb drops the rest in a row)
+function virtualBombs(p, at, t0) {
+  const x = at % W, y = (at / W) | 0, v = { x, y, range: bombRange(p), pierce: p.pierce, star: p.star, t: t0 + FUSE };
+  const out = [v];
+  if (p.line) {
+    const [dx, dy] = DIRV[p.dir];
+    for (let r = 1; out.length < p.maxBombs - p.bombsOut; r++) {
+      const nx = x + dx * r, ny = y + dy * r, i = idx(nx, ny);
+      if (S.grid[i] !== '.' || S.portalAt.has(i) || S.bombs.some(b => !b.dead && b.x === nx && b.y === ny)) break;
+      out.push(Object.assign({}, v, { x: nx, y: ny }));
+    }
+  }
+  return out;
+}
+
+// Could subject p get to a safe tile if bombs `extra` were placed (starting from tile `from` at time t0)?
+function canEscape(p, lv, from, t0, extra) {
+  const D = dangerMap(p.slot, true, extra), blocked = bombTileSet(extra);
+  blocked.delete(from);
+  const bfs = botBFS(p, lv, D, t0, from, blocked, M_PLACE);
+  return bfs.order.some(i => i !== from && safeForever(D, i, lv));
+}
+function canEscapeAfterBomb(p, lv = botLevel(p), at = tileOf(p), t0 = 0) {
+  return canEscape(p, lv, at, t0, virtualBombs(p, at, t0));
+}
+function canPlaceAt(p, i) {
+  return p.curse !== 'nobomb' && p.bombsOut < p.maxBombs && S.grid[i] === '.' && !S.portalAt.has(i)
+    && !S.bombs.some(b => !b.dead && idx(b.x, b.y) === i);
+}
+
+// What a bomb at tile i would achieve: new crates broken, foes caught (by tile)
+function bombValue(p, i, D, foes) {
+  const v = { x: i % W, y: (i / W) | 0, range: bombRange(p), pierce: p.pierce, star: p.star };
+  const bl = blastFrom(v, j => S.bombs.some(b => !b.dead && !b.mine && idx(b.x, b.y) === j));
+  const crates = bl.crates.filter(c => D[c] === Infinity).length; // crates another bomb isn't already taking
+  const set = new Set(bl.tiles);
+  const caught = foes.filter(q => set.has(tileOf(q)));
+  return { crates, caught };
+}
+
+function botPlan(p, lv, mem) {
+  const start = tileOf(p), D = dangerMap(p.slot, lv.chain), blocked = bombTileSet();
+  blocked.delete(start);
+  mem.path = []; const prevGoal = mem.goal; mem.goal = -1;
+
+  // 1. in danger: run to the nearest tile that stays safe
+  if (!safeForever(D, start, lv)) {
+    // if nothing is safe with a margin, take the best chance there is; a remote bomb's blast beats a sure one
+    for (const [m, ok] of [[M_ESCAPE, safeForever], [0, safeForever], [M_ESCAPE, safeForNow], [0, safeForNow]]) {
+      const bfs = botBFS(p, lv, D, 0, start, blocked, m);
+      const goal = bfs.order.find(i => i !== start && ok(D, i, lv));
+      if (goal !== undefined) { mem.path = pathTo(bfs, goal); return; }
+    }
+    if (lv.tele && p.tele > 0) botTeleport(p, lv, mem, D);
+    return;
+  }
+
+  // 2. remote bombs: set them off when it hurts someone, or once they've had time to clear crates
+  if (lv.remote && p.remote && botRemote(p, mem, start)) return; // stand still while it goes off
+
+  const foes = visibleFoes(p), hunting = Math.random() < lv.hunt;
+
+  // 3. mines: lay them where we stand (the button lays a mine while we have any)
+  if (p.mines > 0 && p.curse !== 'nobomb' && S.grid[start] === '.' && !S.portalAt.has(start) && !S.bombs.some(b => !b.dead && idx(b.x, b.y) === start)) { mem.in.bombSeq++; return; }
+
+  // 4. a bomb right here would do something useful, and there's a way out
+  if (canPlaceAt(p, start)) {
+    const val = bombValue(p, start, D, hunting ? foes : []);
+    if ((val.crates > 0 || val.caught.length) && (Math.random() < lv.blunder || canEscapeAfterBomb(p, lv, start, 0))) { mem.in.bombSeq++; return; }
+  }
+
+  // 5. pick a goal: a power-up, a spot that breaks crates, or a spot that catches a foe
+  const bfs = botBFS(p, lv, D, 0, start, blocked, M_GOAL);
+  const stepT = stepTime(p), cands = [];
+  for (const i of bfs.order) {
+    const k = bfs.dist[i], t = S.pu.get(i);
+    if (t && i !== start && (!lv.avoidBad || !BAD_PU.has(t))) cands.push({ i, score: 40 - 2 * k });
+    if (k > 12 || !canPlaceAt(p, i) && i !== start) continue;
+    const val = bombValue(p, i, D, hunting ? foes : []);
+    let score = val.crates ? 12 * val.crates - 2 * k : -Infinity;
+    if (val.caught.length) score = Math.max(score, 30 * val.caught.length - 1.5 * k);
+    if (score > -Infinity && i !== start) cands.push({ i, score, bomb: true, caught: val.caught });
+  }
+  cands.sort((a, b) => b.score - a.score);
+  const keep = cands.findIndex(c => c.i === prevGoal); // stick with the current goal unless something clearly better shows up
+  if (keep > 0 && cands[keep].score >= cands[0].score - 6) cands.unshift(cands.splice(keep, 1)[0]);
+  let checked = 0;
+  for (const c of cands) {
+    if (c.bomb) {
+      if (++checked > 6) continue;
+      if (!canEscapeAfterBomb(p, lv, c.i, bfs.dist[c.i] * stepT)) continue;
+    }
+    mem.goal = c.i; mem.path = pathTo(bfs, c.i); return;
+  }
+
+  // 6. nothing to do: hunt the nearest foe, or wander a little
+  if (hunting && foes.length) {
+    let best = -1, bd = Infinity;
+    for (const i of bfs.order) for (const q of foes) {
+      const d = Math.abs(i % W - Math.round(q.x)) + Math.abs(((i / W) | 0) - Math.round(q.y));
+      if (d < bd) { bd = d; best = i; }
+    }
+    if (best >= 0 && best !== start) { mem.path = pathTo(bfs, best); return; }
+  }
+  const near = bfs.order.filter(i => i !== start && bfs.dist[i] <= 6 && safeForever(D, i, lv));
+  if (near.length && Math.random() < 0.3) mem.path = pathTo(bfs, near[Math.random() * near.length | 0]);
+}
+
+function botRemote(p, mem, start) {
+  const mine = S.bombs.filter(b => !b.dead && b.remote && b.owner === p.slot && !b.fly);
+  if (!mine.length) return false;
+  const D = dangerMap(p.slot, true, mine.map(b => ({ x: b.x, y: b.y, range: b.range, pierce: b.pierce, star: b.star, t: 0 })));
+  if (D[start] !== Infinity) return false; // still standing in our own blast
+  const foeHit = visibleFoes(p).some(q => D[tileOf(q)] === 0);
+  const old = mine.every(b => REMOTE_FUSE - b.fuse > 1.0);
+  if (!foeHit && !old) return false;
+  mem.in.detSeq++;
+  return true;
+}
+
+// Trapped: blink to a safe tile 1–4 tiles away in some direction (same landing rules as teleport())
+function botTeleport(p, lv, mem, D) {
+  const x0 = Math.round(p.x), y0 = Math.round(p.y);
+  for (const d of ['l', 'r', 'u', 'd']) {
+    const [dx, dy] = DIRV[d];
+    for (let r = 4; r >= 1; r--) {
+      const x = x0 + dx * r, y = y0 + dy * r;
+      if (x < 1 || y < 1 || x > W - 2 || y > H - 2) continue;
+      const i = idx(x, y);
+      if (S.grid[i] !== '.' || S.flames.has(i) || S.bombs.some(b => !b.dead && b.x === x && b.y === y)) continue;
+      if (safeForever(D, i, lv)) { mem.teleDir = d; mem.in.teleSeq++; }
+      break; // teleport() takes the first valid landing tile in this direction
+    }
+    if (mem.teleDir) return;
+  }
+}
+
+// Press the keys that move the bot toward the next tile of its path
+function botSteer(p, mem, dt) {
+  const inp = mem.in;
+  inp.up = inp.down = inp.left = inp.right = false;
+  if (mem.teleDir) { // face the teleport direction this tick (movement sets p.dir before teleport() runs)
+    const d = mem.teleDir; mem.teleDir = null;
+    inp[{ l: 'left', r: 'right', u: 'up', d: 'down' }[d]] = true;
+    return;
+  }
+  const tol = Math.max(0.12, dt / stepTime(p));
+  while (mem.path.length) {
+    const t = mem.path[0];
+    if (Math.abs(p.x - t % W) < tol && Math.abs(p.y - ((t / W) | 0)) < tol) mem.path.shift(); else break;
+  }
+  if (!mem.path.length) { // nowhere to go: settle on the middle of the current tile, never astride two tiles
+    mem.stuck = 0;
+    const c = tileOf(p), cx = c % W - p.x, cy = ((c / W) | 0) - p.y;
+    if (Math.abs(cx) <= 0.04 && Math.abs(cy) <= 0.04) return;
+    mem.path = [c];
+  }
+  const t = mem.path[0], dx = t % W - p.x, dy = ((t / W) | 0) - p.y;
+  let key;
+  if (Math.abs(dx) >= Math.abs(dy)) { key = dx < 0 ? 'left' : 'right'; inp.pri = 'h'; }
+  else { key = dy < 0 ? 'up' : 'down'; inp.pri = 'v'; }
+  if (p.curse === 'rev') key = { left: 'right', right: 'left', up: 'down', down: 'up' }[key];
+  inp[key] = true;
+  // not getting anywhere (another player, a bomb that just appeared…): think again
+  if (Math.abs(p.x - mem.lx) + Math.abs(p.y - mem.ly) < 0.002) { mem.stuck += dt; if (mem.stuck > 0.4) { mem.stuck = 0; mem.path = []; mem.t = 0; } }
+  else mem.stuck = 0;
+  mem.lx = p.x; mem.ly = p.y;
+}
+
+function botThink(p, dt) {
+  const lv = botLevel(p);
+  let mem = S.bots[p.slot];
+  if (!mem) { // keep the button counters of the input object the player already has, so nothing fires by itself
+    const old = inputs[p.slot] || {};
+    mem = S.bots[p.slot] = { t: 0, path: [], stuck: 0, lx: p.x, ly: p.y, teleDir: null,
+      in: { bombSeq: old.bombSeq || 0, teleSeq: old.teleSeq || 0, detSeq: old.detSeq || 0, pri: 'h' } };
+  }
+  mem.t -= dt;
+  if (mem.t <= 0) { mem.t = lv.react * (0.7 + Math.random() * 0.6); botPlan(p, lv, mem); }
+  botSteer(p, mem, dt);
+  inputs[p.slot] = mem.in;
 }
 
 // ================== INPUT ==================
@@ -1224,6 +1536,7 @@ function boardRows(v) {
   const sc = v.sc || [];
   return v.names.map((n, i) => {
     const [k, d, sk, cr, it] = sc[i] || [0, 0, 0, 0, 0];
+    if (v.bt && v.bt[i]) n += ' · ' + (LEVEL_LABEL[v.bt[i]] || '');
     return { i, n, w: v.wins[i] || 0, k, d, sk, cr, it, con: !v.con || v.con[i] };
   }).sort((a, b) => b.w - a.w || b.k - a.k || a.d - b.d);
 }
@@ -1269,8 +1582,10 @@ function recordMatch(v) {
   lastRecordedMid = v.mid;
   let seen = []; try { seen = JSON.parse(localStorage.getItem('bg-seen') || '[]'); } catch (e) { }
   if (seen.includes(v.mid)) return;
+  if (mode === 'local' && localHumans === 2) return; // same keyboard: names are just "Player 1/2"
   const all = loadAll(), top = Math.max(...v.wins);
   v.names.forEach((n, i) => {
+    if (v.bt && v.bt[i]) return; // bots don't go on the all-time board
     const key = n.trim().toUpperCase(), a = all[key] || (all[key] = { name: n, m: 0, mw: 0, r: 0, k: 0, d: 0 });
     const [k, d] = v.sc[i] || [0, 0];
     a.name = n; a.m++; if (v.wins[i] === top && top > 0) a.mw++; a.r += v.wins[i] || 0; a.k += k; a.d += d;
@@ -1292,7 +1607,7 @@ function updateHUD(v) {
   const cards = v.names.map((n, i) => {
     const p = v.p[i];
     const stars = '★'.repeat(v.wins[i]) + '☆'.repeat(Math.max(0, (v.wt || WIN_TARGET) - v.wins[i]));
-    return `<div class="card ${p[2] ? '' : 'dead'}"><div class="nm"><span class="dot" style="background:${COLORS[i]}"></span>${esc(n)}${i === mySlot && mode !== 'local' ? ' (you)' : ''}${v.con[i] ? '' : ' ✖'}${v.sc && v.sc[i] ? `<span class="kc" title="kills / deaths">⚔${v.sc[i][0]}<span>/${v.sc[i][1]}</span></span>` : ''}</div>
+    return `<div class="card ${p[2] ? '' : 'dead'}"><div class="nm"><span class="dot" style="background:${COLORS[i]}"></span>${esc(n)}${v.bt && v.bt[i] ? ' · ' + (LEVEL_LABEL[v.bt[i]] || '') : ''}${i === mySlot && mode !== 'local' ? ' (you)' : ''}${v.con[i] ? '' : ' ✖'}${v.sc && v.sc[i] ? `<span class="kc" title="kills / deaths">⚔${v.sc[i][0]}<span>/${v.sc[i][1]}</span></span>` : ''}</div>
       <div class="wins">${stars}</div><div class="st"><span><i class="emo">💣</i>${p[6]}</span><span><i class="emo">🔥</i>${p[7]}</span><span><i class="emo">⚡</i>${p[8]}</span>${p[9] ? '<span><i class="emo">👢</i></span>' : ''}${p[10] ? '<span><i class="emo">👻</i></span>' : ''}${p[11] ? `<span><i class="emo">🌀</i>${p[11]}</span>` : ''}${p[12] & 1 ? '<span><i class="emo">📡</i></span>' : ''}${p[12] & 2 ? '<span><i class="emo">🎯</i></span>' : ''}${p[12] & 4 ? `<span><i class="emo">🧱</i>${Math.ceil(p[21] || 0)}</span>` : ''}${p[12] & 8 ? '<span><i class="emo">➖</i></span>' : ''}${p[13] ? `<span><i class="emo">💥</i>${p[13]}</span>` : ''}${p[14] > 1 ? `<span><i class="emo">❤️</i>${p[14]}</span>` : ''}${p[15] > 0 && p[15] > HIT_INV ? `<span><i class="emo">🛡️</i>${Math.ceil(p[15])}</span>` : ''}${p[16] ? `<span style="color:#fb7185"><i class="emo">💀</i>${CURSE_LABEL[p[16]] || ''} ${p[17]}</span>` : ''}${p[19] & 1 ? '<span><i class="emo">🧤</i></span>' : ''}${p[19] & 2 ? '<span><i class="emo">⭐</i></span>' : ''}${p[20] ? `<span><i class="emo">🧨</i>${p[20]}</span>` : ''}${p[18] > 0 ? `<span><i class="emo">👁️</i>${Math.ceil(p[18])}</span>` : ''}</div></div>`;
   });
   const half = Math.ceil(cards.length / 2);
@@ -1464,7 +1779,7 @@ function startHostPeer(tries = 0) {
     const entry = { conn, name: 'Guest', slot: -1, open: false, inQ: 0, ping: 0 };
     const reject = why => { conn.send({ t: 'reject', why }); setTimeout(() => conn.close(), 300); };
     conn.on('open', () => {
-      if (!started && conns.filter(c => c.open).length >= MAX_PLAYERS - 1) { reject('Room is full.'); return; }
+      if (!started && !makeRoomForGuest()) { reject('Room is full.'); return; }
       entry.open = true; conns.push(entry);
       if (!started) renderLobby(); // mid-game joiners are placed once their name arrives (hello)
     });
@@ -1552,6 +1867,23 @@ function renderLobby(list, set) {
   if (edit) $('#btnStart').disabled = list.length < 2;
   if (mode === 'host') broadcast({ t: 'lobby', players: list.map(p => ({ name: p.name, bot: p.level })), set: SET });
 }
+function addBot() { if (mode !== 'guest' && lobbyList().length < MAX_PLAYERS) { lobbyBots.push({ level: 'normal' }); renderLobby(); } }
+function cycleBot(j) { const b = lobbyBots[j]; if (b && mode !== 'guest') { b.level = BOT_CYCLE[b.level] || 'normal'; renderLobby(); } }
+function removeBot(j) { if (mode !== 'guest' && lobbyBots[j]) { lobbyBots.splice(j, 1); renderLobby(); } }
+// a guest is joining the lobby: drop the last bot if that's what it takes to make room
+function makeRoomForGuest() {
+  const humans = 1 + conns.filter(c => c.open).length;
+  if (humans + lobbyBots.length < MAX_PLAYERS) return true;
+  if (!lobbyBots.length) return false;
+  lobbyBots.pop(); return true;
+}
+$('#btnAddBot').onclick = addBot;
+$('#plist').onclick = e => {
+  const t = e.target, del = t.closest && t.closest('[data-del]');
+  if (del) { e.stopPropagation(); removeBot(+del.dataset.del); return; }
+  const li = t.closest && t.closest('[data-bot]');
+  if (li) cycleBot(+li.dataset.bot);
+};
 $('#btnP2').onclick = () => {
   if (mode !== 'local') return;
   localHumans = localHumans === 2 ? 1 : 2;

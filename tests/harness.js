@@ -43,9 +43,15 @@ function loadGame(opts = {}) {
   const byId = id => { if (!els.has(id)) { const e = element(); e.id = id; els.set(id, e); } return els.get(id); };
   const store = new Map(Object.entries(opts.store || {}));
   const listeners = {};
+  let math = Math;
+  if (opts.seed !== undefined) { // deterministic Math.random (mulberry32) so bot tests are repeatable
+    let t = opts.seed >>> 0;
+    math = Object.create(Math);
+    math.random = () => { t = (t + 0x6D2B79F5) >>> 0; let r = Math.imul(t ^ (t >>> 15), 1 | t); r ^= r + Math.imul(r ^ (r >>> 7), 61 | r); return ((r ^ (r >>> 14)) >>> 0) / 4294967296; };
+  }
   const sandbox = {
     console,
-    Math, JSON, Date, Map, Set, Array, Object, String, Number, Boolean, Promise, Error, Proxy, Float32Array, Int32Array, Uint8Array, Infinity, NaN,
+    Math: math, JSON, Date, Map, Set, Array, Object, String, Number, Boolean, Promise, Error, Proxy, Float32Array, Int32Array, Uint8Array, Infinity, NaN,
     performance: { now: () => sandbox.__now },
     __now: 0,
     __listeners: listeners,
