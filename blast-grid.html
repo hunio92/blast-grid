@@ -1601,7 +1601,7 @@ function render(v, dt) {
   const order = v.p.map((p, i) => i);
   v.p.forEach((p, i) => {
     let d = disp[i];
-    if (mode !== 'guest' || !d || Math.abs(d.x - p[0]) + Math.abs(d.y - p[1]) > 1.5) disp[i] = d = { x: p[0], y: p[1] };
+    if (mode !== 'guest' || !d || (PRED && i === mySlot) || Math.abs(d.x - p[0]) + Math.abs(d.y - p[1]) > 1.5) disp[i] = d = { x: p[0], y: p[1] };
     else { const k = 1 - Math.exp(-dt * 25); d.x += (p[0] - d.x) * k; d.y += (p[1] - d.y) * k; }
   });
   order.sort((a, b) => disp[a].y - disp[b].y);
@@ -1738,8 +1738,104 @@ try {
   w.onmessage = () => { simStep(); if (++n % 60 === 0) netTick(); }; // netTick on the same un-throttled clock
 } catch (e) { setInterval(simStep, 1000 / 60); setInterval(() => netTick(), 1000); }
 
-// ---- guest: what to draw this frame (Task 2/3 fill this in) ----
-function guestUpdate(now, dt) { return view; }
+// ================== GUEST SMOOTHING ==================
+// The host owns the game. A guest still moves its own player the moment a key is pressed, using the same movePlayer()
+// rules against the latest grid and bombs, and only corrects itself when the host clearly disagrees.
+const PRED_TOL_MOVE = 0.35, PRED_TOL_IDLE = 0.03, PRED_SNAP = 1.5, PRED_EASE = 12;
+let PRED = null, predAcc = 0;
+function predictReset() { PRED = null; predAcc = 0; }
+const overlaps = (x, y, i) => Math.abs(x - i % W) < 0.98 && Math.abs(y - ((i / W) | 0)) < 0.98;
+function predictable(v) {
+  const p = v && v.p && v.p[mySlot];
+  return !!(p && p[2] && (v.ph === 'play' || v.ph === 'grace') && !joinedLate);
+}
+const bombTilesOf = v => new Set(v.b.filter(b => !(b[3] & 8)).map(b => idx(Math.round(b[0]), Math.round(b[1]))));
+// a stand-in for S that movePlayer() can read: the latest grid and bombs as this guest knows them
+function predWorld(v) {
+  return { grid: v.g.split(''), bombs: [...PRED.known].map(i => ({ x: i % W, y: (i / W) | 0, mine: false, dead: false, pass: new Set(PRED.pass.has(i) ? [mySlot] : []) })) };
+}
+function predPlayer(v) {
+  const p = v.p[mySlot];
+  return { slot: mySlot, x: PRED.x, y: PRED.y, dir: PRED.dir, walk: PRED.walk, speed: p[8], ghost: !!p[10], kick: false,
+    softT: (p[12] & 4) ? (p[21] || 1) : 0, curse: p[16] || '' };
+}
+// can a player stand on tile (x, y) as far as the guest knows?
+function predFree(x, y) {
+  const i = idx(Math.round(x), Math.round(y)), c = view.g[i], p = view.p[mySlot];
+  if (c !== '.' && !(c === '+' && (p[12] & 4))) return false;
+  return !PRED.known.has(i) || PRED.pass.has(i) || !!p[10];
+}
+// where the guest's player was at time t (ms), from the recent history
+function histAt(t) {
+  const h = PRED.hist; if (!h.length) return null;
+  if (t <= h[0].t) return h[0];
+  for (let k = h.length - 1; k > 0; k--) if (h[k - 1].t <= t) {
+    const a = h[k - 1], b = h[k], f = b.t > a.t ? (t - a.t) / (b.t - a.t) : 1;
+    return { x: a.x + (b.x - a.x) * Math.min(1, f), y: a.y + (b.y - a.y) * Math.min(1, f) };
+  }
+  return h[h.length - 1];
+}
+function predMoveTo(x, y) { // move the predicted position without a visible jump (the shown position eases over)
+  const dx = x - PRED.x, dy = y - PRED.y;
+  PRED.offX -= dx; PRED.offY -= dy; PRED.x = x; PRED.y = y;
+  for (const h of PRED.hist) { h.x += dx; h.y += dy; } // the past is corrected too, so it isn't counted twice
+  for (const i of [...PRED.pass]) if (!overlaps(x, y, i)) PRED.pass.delete(i);
+}
+function predictOnSnapshot(d, now) {
+  if (!predictable(d)) { PRED = null; return; }
+  const sp = d.p[mySlot], sx = sp[0], sy = sp[1];
+  if (!PRED) PRED = { x: sx, y: sy, dir: sp[3], walk: sp[4], offX: 0, offY: 0, hist: [], pass: new Set(), known: new Set(), lastInput: -1e9 };
+  // our own new bomb under us: we may walk off it, like on the host (anyone else's bomb blocks us)
+  const tiles = bombTilesOf(d);
+  for (const b of d.b) {
+    const i = idx(Math.round(b[0]), Math.round(b[1]));
+    if (!(b[3] & 8) && b[5] === mySlot && !PRED.known.has(i) && overlaps(PRED.x, PRED.y, i)) PRED.pass.add(i);
+  }
+  for (const i of [...PRED.pass]) if (!tiles.has(i)) PRED.pass.delete(i);
+  PRED.known = tiles; PRED.world = null;
+  // compare with where we were when the host made this snapshot (about one round trip ago); once we've been standing
+  // still for longer than that, compare with where we are now
+  const lag = Math.min(400, Math.max(20, myPing || 100)) + 25;
+  const idle = now - PRED.lastInput > lag + 150;
+  const ref = idle ? PRED : (histAt(now - lag) || PRED);
+  const ex = sx - ref.x, ey = sy - ref.y, e = Math.hypot(ex, ey);
+  if (e > PRED_SNAP) { // teleport, portal, new round…: jump
+    PRED.x = sx; PRED.y = sy; PRED.offX = PRED.offY = 0; PRED.hist = [];
+    PRED.pass = new Set([...tiles].filter(i => overlaps(sx, sy, i)));
+  } else if (e > (idle ? PRED_TOL_IDLE : PRED_TOL_MOVE)) {
+    let nx = PRED.x + ex, ny = PRED.y + ey;
+    if (!predFree(nx, ny)) { nx = sx; ny = sy; } // never land inside something: take the host's word
+    predMoveTo(nx, ny);
+  }
+}
+function predictStep(now, dt) {
+  const v = view;
+  if (!PRED || !predictable(v)) { PRED = null; return; }
+  const inp = dirState(0);
+  if (inp.up || inp.down || inp.left || inp.right) PRED.lastInput = now;
+  if (!PRED.world) PRED.world = predWorld(v);
+  const pp = predPlayer(v), saved = S;
+  predAcc = Math.min(0.25, predAcc + dt);
+  S = PRED.world;
+  try { while (predAcc >= 1 / 60) { movePlayer(pp, inp, 1 / 60); predAcc -= 1 / 60; } }
+  finally { S = saved; }
+  PRED.x = pp.x; PRED.y = pp.y; PRED.dir = pp.dir; PRED.walk = pp.walk;
+  for (const i of [...PRED.pass]) if (!overlaps(PRED.x, PRED.y, i)) { PRED.pass.delete(i); PRED.world = null; }
+  PRED.hist.push({ t: now, x: PRED.x, y: PRED.y });
+  while (PRED.hist.length && PRED.hist[0].t < now - 1000) PRED.hist.shift();
+  const k = Math.exp(-dt * PRED_EASE); PRED.offX *= k; PRED.offY *= k;
+}
+
+// ---- guest: what to draw this frame ----
+function guestUpdate(now, dt) {
+  if (!view) return view;
+  predictStep(now, dt);
+  if (!PRED) return view;
+  const dv = Object.assign({}, view), q = view.p[mySlot].slice();
+  q[0] = PRED.x + PRED.offX; q[1] = PRED.y + PRED.offY; q[3] = PRED.dir; q[4] = PRED.walk;
+  dv.p = view.p.slice(); dv.p[mySlot] = q;
+  return dv;
+}
 
 // ---- connection quality (ping + direct/relay) ----
 function netTick() {
@@ -1836,7 +1932,7 @@ function resetAll() {
   conns.forEach(c => { try { c.conn.close(); } catch (e) { } }); conns = [];
   if (hostConn) { try { hostConn.close(); } catch (e) { } hostConn = null; }
   if (peer) { try { peer.destroy(); } catch (e) { } peer = null; }
-  keys.clear(); inputs = []; myPing = 0; myRelay = false; joinedLate = false; lastSnapQ = -1;
+  predictReset(); keys.clear(); inputs = []; myPing = 0; myRelay = false; joinedLate = false; lastSnapQ = -1;
   const n = $('#net'); if (n) n.textContent = '';
 }
 function toMenu(msg) { resetAll(); show('menu'); menuStatus(msg); }
@@ -2065,7 +2161,7 @@ function guestOnData(d) {
       : { name: String(p.name), kind: p.bot ? 'bot' : i ? 'guest' : 'host', level: p.bot });
     renderLobby(list, cleanSet(d.set)); lobbyStatus('Waiting for the host to start…');
   }
-  else if (d.t === 'start') { mySlot = d.slot; joinedLate = !!d.late; localIn[0].bombSeq = 0; localIn[0].teleSeq = 0; localIn[0].detSeq = 0; lastSent = ''; lastSnapQ = -1; lastSnapAt = performance.now(); view = null; enterGame(); sendGuestInput(); }
+  else if (d.t === 'start') { predictReset(); mySlot = d.slot; joinedLate = !!d.late; localIn[0].bombSeq = 0; localIn[0].teleSeq = 0; localIn[0].detSeq = 0; lastSent = ''; lastSnapQ = -1; lastSnapAt = performance.now(); view = null; enterGame(); sendGuestInput(); }
   else if (d.t === 's') {
     if (d.ev) playEvents(d.ev);
     if (typeof d.q === 'number') { if (d.q <= lastSnapQ) return; lastSnapQ = d.q; } // an older snapshot arrived late: skip it
@@ -2073,6 +2169,7 @@ function guestOnData(d) {
     if (d.w && (d.w !== W || d.h !== H)) setSize(d.w, d.h);
     view = d;
     if (joinedLate && d.p[mySlot] && d.p[mySlot][2]) joinedLate = false;
+    predictOnSnapshot(d, performance.now());
   }
 }
 </script>
