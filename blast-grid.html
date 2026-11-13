@@ -193,7 +193,7 @@ const COLORS = ['#f8fafc', '#38bdf8', '#fb7185', '#a3e635'];
 const DARK   = ['#94a3b8', '#0369a1', '#be123c', '#4d7c0f'];
 const spawnPoints = () => [[1, 1], [W - 2, H - 2], [W - 2, 1], [1, H - 2]];
 const FUSE = 2.4, FLAME_T = 0.55, WIN_TARGET = 3, MAX_PLAYERS = 4;
-const ID_PREFIX = 'blastgrid-v5-'; // bump when the network format changes so old and new versions don't mix
+const ID_PREFIX = 'blastgrid-v6-'; // bump when the network format changes so old and new versions don't mix
 const idx = (x, y) => y * W + x;
 const $ = s => document.querySelector(s);
 
@@ -236,7 +236,7 @@ const PU_TABLE = [['b', 10], ['f', 10], ['s', 7],
   ['d', 3], ['n', 3], ['e', 3]];
 const PU_TOTAL = PU_TABLE.reduce((a, [, w]) => a + w, 0);
 function randPU() { let r = Math.random() * PU_TOTAL; for (const [t, w] of PU_TABLE) if ((r -= w) < 0) return t; return 'b'; }
-const MAX_RANGE = 8, REMOTE_FUSE = 8, VEST_TIME = 8, HIT_INV = 1.5, CURSE_TIME = 10, FREEZE_TIME = 2.5, INVIS_TIME = 8, MINE_ARM = 1.0;
+const MAX_RANGE = 8, REMOTE_FUSE = 8, VEST_TIME = 8, HIT_INV = 1.5, CURSE_TIME = 10, INVIS_TIME = 8, MINE_ARM = 1.0;
 const SOFT_TIME = 5;
 const PORTAL_COLORS = ['#c084fc', '#2dd4bf', '#fb923c'];
 const DIRV = { l: [-1, 0], r: [1, 0], u: [0, -1], d: [0, 1] };
@@ -291,7 +291,7 @@ function makePlayer(i, alive) {
     slot: i, x: sp[0], y: sp[1], alive, dir: 'd', walk: 0,
     maxBombs: 1, range: 2, speed: 0, kick: false, ghost: false, tele: 0, bombsOut: 0, deathT: 9,
     remote: false, pierce: false, softT: 0, line: false, power: 0, hp: 1, inv: 0, curse: '', curseT: 0, autoT: 0,
-    glove: false, star: false, mines: 0, frozen: 0, invis: 0, portalLock: -1,
+    glove: false, star: false, mines: 0, invis: 0, portalLock: -1,
     lastSeq: (inputs[i] && inputs[i].bombSeq) || 0, lastTele: (inputs[i] && inputs[i].teleSeq) || 0, lastDet: (inputs[i] && inputs[i].detSeq) || 0,
   };
 }
@@ -309,7 +309,7 @@ function blocked(x, y, p) {
 // Can a sliding bomb enter tile (x,y)?
 function bombFree(x, y, self) {
   if (x < 0 || y < 0 || x >= W || y >= H || S.grid[idx(x, y)] !== '.' || S.portalAt.has(idx(x, y))) return false;
-  if (S.bombs.some(q => q !== self && !q.dead && q.x === x && q.y === y)) return false;
+  if (S.bombs.some(q => q !== self && !q.dead && !q.mine && q.x === x && q.y === y)) return false; // hidden mines don't stop bombs (that would reveal them)
   return !S.players.some(p => p.alive && Math.abs(p.x - x) < 0.9 && Math.abs(p.y - y) < 0.9);
 }
 
@@ -519,6 +519,7 @@ function explode(b) {
       addFlame(x, y, fk, b.owner);
     }
   }
+  for (const q of S.bombs) if (!q.dead && !q.fly && q.x === b.x && q.y === b.y) explode(q); // e.g. a bomb resting on a mine
 }
 
 // by: slot whose bomb did it, -1 = the arena (sudden death), null = left the game (not counted)
@@ -573,13 +574,6 @@ function tick(dt) {
     if (p.curseT > 0) { p.curseT -= dt; if (p.curseT <= 0) { p.curse = ''; p.curseT = 0; } }
     if (p.invis > 0) p.invis = Math.max(0, p.invis - dt);
     if (p.softT > 0) { p.softT -= dt; if (p.softT <= 0) { p.softT = 0; unstick(p); } }
-    if (p.frozen > 0) { // frozen: no moving, and button presses made while frozen are dropped
-      p.frozen = Math.max(0, p.frozen - dt);
-      if (inp.bombSeq !== undefined) p.lastSeq = inp.bombSeq;
-      if (inp.teleSeq !== undefined) p.lastTele = inp.teleSeq;
-      if (inp.detSeq !== undefined) p.lastDet = inp.detSeq;
-      continue;
-    }
     movePlayer(p, inp, dt);
     if (inp.bombSeq !== undefined && inp.bombSeq !== p.lastSeq) { p.lastSeq = inp.bombSeq; placeBomb(p); }
     if (inp.teleSeq !== undefined && inp.teleSeq !== p.lastTele) { p.lastTele = inp.teleSeq; teleport(p); }
@@ -670,7 +664,7 @@ function snapshot() {
     f: [...S.flames].map(([i, f]) => [i, f.k, +f.t.toFixed(2)]),
     p: S.players.map(p => [+p.x.toFixed(3), +p.y.toFixed(3), p.alive ? 1 : 0, p.dir, +p.walk.toFixed(2), +Math.min(p.deathT, 9).toFixed(2), p.maxBombs, p.range, p.speed, p.kick ? 1 : 0, p.ghost ? 1 : 0, p.tele,
       (p.remote ? 1 : 0) | (p.pierce ? 2 : 0) | (p.softT > 0 ? 4 : 0) | (p.line ? 8 : 0), p.power, p.hp, +p.inv.toFixed(2), p.curse, Math.ceil(p.curseT),
-      +p.frozen.toFixed(2), +p.invis.toFixed(2), (p.glove ? 1 : 0) | (p.star ? 2 : 0), p.mines, +p.softT.toFixed(2)]),
+      +p.invis.toFixed(2), (p.glove ? 1 : 0) | (p.star ? 2 : 0), p.mines, +p.softT.toFixed(2)]),
     ph: S.phase, ct: +S.t.toFixed(2), tm: +S.time.toFixed(2), rt: roundTime, w: W, h: H, ban: S.banner, mid: M.id,
     sc: M.players.map(q => [q.kills || 0, q.deaths || 0, q.selfK || 0, q.crates || 0, q.items || 0]),
     names: M.players.map(q => q.name), wins: M.players.map(q => q.wins), con: M.players.map(q => q.connected !== false),
@@ -779,12 +773,13 @@ $('#btnKeysReset').onclick = () => {
 };
 
 let muted = false;
+try { muted = localStorage.getItem('bg-mute') === '1'; } catch (e) { }
 addEventListener('keydown', e => {
   unlockAudio();
   if (e.target.tagName === 'INPUT') { if (e.code === 'Enter') { if (e.target.id === 'code') $('#btnJoin').click(); } return; }
   if (!started) return;
   if (e.code === 'Tab') { e.preventDefault(); boardHeld = true; return; }
-  if (e.code === 'KeyM' && !e.repeat) { muted = !muted; return; }
+  if (e.code === 'KeyM' && !e.repeat) { toggleMute(); return; }
   if (e.code === 'KeyR' && !e.repeat && view && view.ph === 'match' && mode !== 'guest') { startMatch(); return; }
   const k = findKey(e.code); if (!k) return;
   e.preventDefault();
@@ -798,7 +793,7 @@ addEventListener('keydown', e => {
   sendGuestInput();
 });
 addEventListener('keyup', e => { if (e.code === 'Tab') boardHeld = false; keys.delete(e.code); sendGuestInput(); });
-addEventListener('blur', () => { keys.clear(); sendGuestInput(); });
+addEventListener('blur', () => { keys.clear(); boardHeld = false; sendGuestInput(); });
 
 function readLocalInputs() {
   if (mode === 'local') { inputs[0] = dirState(0); inputs[1] = dirState(1); }
@@ -835,12 +830,12 @@ function sfx(name) {
   else if (name === 'tele') { tone('sine', 300, 1400, 0.22, 0.15); tone('triangle', 1400, 300, 0.2, 0.08, 0.12); }
   else if (name === 'portal') { tone('sine', 700, 180, 0.18, 0.12); tone('sine', 180, 900, 0.2, 0.1, 0.15); }
   else if (name === 'throw') tone('triangle', 320, 760, 0.18, 0.12);
-  else if (name === 'freeze') { tone('sine', 1800, 900, 0.3, 0.1); tone('sine', 2400, 1200, 0.3, 0.06, 0.08); }
   else if (name === 'thud') tone('sine', 110, 50, 0.15, 0.25);
   else if (name === 'det') { tone('square', 900, 900, 0.05, 0.1); tone('square', 1200, 1200, 0.05, 0.1, 0.07); }
   else if (name === 'hurt') tone('sawtooth', 380, 140, 0.25, 0.14);
   else if (name === 'curse') { tone('sawtooth', 220, 110, 0.25, 0.14); tone('sawtooth', 165, 82, 0.3, 0.14, 0.2); }
 }
+function toggleMute() { muted = !muted; try { localStorage.setItem('bg-mute', muted ? '1' : '0'); } catch (e) { } }
 function playEvents(list) { new Set(list).forEach(sfx); }
 
 // ================== RENDERING ==================
@@ -880,7 +875,7 @@ function drawPU(i, type) {
   const glow = 0.5 + 0.5 * Math.sin(clock * 6);
   ctx.fillStyle = { b: '#334155', f: '#7c2d12', s: '#1e3a8a', k: '#3f2a1d', t: '#4c1d95', g: '#134e4a',
     r: '#164e63', p: '#7f1d1d', u: '#78350f', v: '#0c4a6e', h: '#881337', w: '#365314', l: '#3f3f46', m: '#713f12', x: '#2e1065', d: '#450a0a', n: '#450a0a', e: '#450a0a',
-    o: '#701a75', j: '#1f2937', z: '#155e75', y: '#854d0e', i: '#374151' }[type];
+    o: '#701a75', j: '#1f2937', y: '#854d0e', i: '#374151' }[type];
   ctx.strokeStyle = `rgba(250,204,21,${0.5 + glow * 0.5})`; ctx.lineWidth = 3;
   ctx.beginPath(); ctx.roundRect(px + 6, py + 6, T - 12, T - 12, 7); ctx.fill(); ctx.stroke();
   if (type === 'b') {
@@ -912,13 +907,6 @@ function drawPU(i, type) {
     ctx.fillStyle = '#6b7280'; ctx.beginPath(); ctx.ellipse(cx, cy + 3, 13, 7, 0, 0, 7); ctx.fill();
     ctx.fillStyle = '#374151'; ctx.beginPath(); ctx.ellipse(cx, cy, 10, 5, 0, 0, 7); ctx.fill();
     ctx.fillStyle = Math.sin(clock * 8) > 0 ? '#ef4444' : '#7f1d1d'; ctx.beginPath(); ctx.arc(cx, cy - 1, 3, 0, 7); ctx.fill();
-  } else if (type === 'z') { // freeze: snowflake
-    ctx.strokeStyle = '#e0f2fe'; ctx.lineWidth = 2.5; ctx.lineCap = 'round';
-    for (let k = 0; k < 3; k++) {
-      const a = k * Math.PI / 3 + clock * 0.8, ax = Math.cos(a) * 12, ay = Math.sin(a) * 12;
-      ctx.beginPath(); ctx.moveTo(cx - ax, cy - ay); ctx.lineTo(cx + ax, cy + ay); ctx.stroke();
-    }
-    ctx.lineCap = 'butt'; ctx.fillStyle = '#7dd3fc'; ctx.beginPath(); ctx.arc(cx, cy, 3, 0, 7); ctx.fill();
   } else if (type === 'y') { // star bomb
     ctx.fillStyle = '#fde047'; ctx.strokeStyle = '#000'; ctx.lineWidth = 1.5; ctx.beginPath();
     for (let k = 0; k < 10; k++) { const a = -Math.PI / 2 + k * Math.PI / 5, r = k % 2 ? 6 : 14; ctx.lineTo(cx + Math.cos(a) * r, cy + 1 + Math.sin(a) * r); }
@@ -1149,8 +1137,8 @@ function render(v, dt) {
   for (const i of order) {
     const p = v.p[i];
     const rt = v.rt || roundTime;
-    const args = [i, disp[i].x, disp[i].y, p[2], p[3], p[4], p[5], i === mySlot, multi && i === mySlot && (v.ph === 'count' || (v.ph === 'play' && v.tm > rt - 2)), p[10], p[15], p[16], (p[12] & 4) ? (p[22] || 1) : 0];
-    if (p[2] && p[19] > 0) { // invisible: faint to yourself (or on a shared screen), almost nothing to opponents
+    const args = [i, disp[i].x, disp[i].y, p[2], p[3], p[4], p[5], i === mySlot, multi && i === mySlot && (v.ph === 'count' || (v.ph === 'play' && v.tm > rt - 2)), p[10], p[15], p[16], (p[12] & 4) ? (p[21] || 1) : 0];
+    if (p[2] && p[18] > 0) { // invisible: faint to yourself (or on a shared screen), almost nothing to opponents
       const a = (mode === 'local' || i === mySlot) ? 0.35 : 0.05;
       const cx = disp[i].x * T + T / 2, cy = disp[i].y * T + T / 2;
       offCtx.setTransform(1, 0, 0, 1, 0, 0); offCtx.clearRect(0, 0, 112, 112);
@@ -1158,12 +1146,6 @@ function render(v, dt) {
       ctx = offCtx; drawPlayer(...args); ctx = mainCtx;
       ctx.globalAlpha = a; ctx.drawImage(off, cx - 56, cy - 60); ctx.globalAlpha = 1;
     } else drawPlayer(...args);
-    if (p[2] && p[18] > 0) { // frozen: ice block
-      const px = disp[i].x * T, py = disp[i].y * T;
-      ctx.fillStyle = 'rgba(125,211,252,.45)'; ctx.strokeStyle = 'rgba(224,242,254,.95)'; ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.roundRect(px + 3, py - 4, T - 6, T + 2, 6); ctx.fill(); ctx.stroke();
-      ctx.fillStyle = 'rgba(255,255,255,.7)'; ctx.fillRect(px + 9, py + 1, 4, 14); ctx.fillRect(px + 15, py + 1, 3, 7);
-    }
   }
   // overlays
   if (v.ph === 'count') bigText(String(Math.max(1, Math.ceil(v.ct))), '#ffb020');
@@ -1223,8 +1205,10 @@ function drawBoard(v, title, sub) {
 
 // all-time scoreboard: every browser records each finished match it saw (stored locally, keyed by player name)
 function loadAll() { try { return JSON.parse(localStorage.getItem('bg-alltime') || '{}') || {}; } catch (e) { return {}; } }
+let lastRecordedMid = null;
 function recordMatch(v) {
-  if (!v.mid || !v.sc) return;
+  if (!v.mid || !v.sc || v.mid === lastRecordedMid) return;
+  lastRecordedMid = v.mid;
   let seen = []; try { seen = JSON.parse(localStorage.getItem('bg-seen') || '[]'); } catch (e) { }
   if (seen.includes(v.mid)) return;
   const all = loadAll(), top = Math.max(...v.wins);
@@ -1245,13 +1229,13 @@ function renderAllTime() {
 let hudKey = '';
 function updateHUD(v) {
   const timer = v.tm > 0 ? `${Math.floor(Math.ceil(v.tm) / 60)}:${String(Math.ceil(v.tm) % 60).padStart(2, '0')}` : 'SD!';
-  const key = JSON.stringify([timer, v.names, v.wins, v.con, v.sc, v.p.map(p => [p[2], p[6], p[7], p[8], p[9], p[10], p[11], p[12], p[13], p[14], p[15] > 0 ? Math.ceil(p[15]) : 0, p[16], p[17], Math.ceil(p[18] || 0), Math.ceil(p[19] || 0), p[20], p[21], Math.ceil(p[22] || 0)])]);
+  const key = JSON.stringify([timer, v.names, v.wins, v.con, v.sc, v.p.map(p => [p[2], p[6], p[7], p[8], p[9], p[10], p[11], p[12], p[13], p[14], p[15] > 0 ? Math.ceil(p[15]) : 0, p[16], p[17], Math.ceil(p[18] || 0), p[19], p[20], Math.ceil(p[21] || 0)])]);
   if (key === hudKey) return; hudKey = key;
   const cards = v.names.map((n, i) => {
     const p = v.p[i];
     const stars = '★'.repeat(v.wins[i]) + '☆'.repeat(Math.max(0, WIN_TARGET - v.wins[i]));
     return `<div class="card ${p[2] ? '' : 'dead'}"><div class="nm"><span class="dot" style="background:${COLORS[i]}"></span>${esc(n)}${i === mySlot && mode !== 'local' ? ' (you)' : ''}${v.con[i] ? '' : ' ✖'}${v.sc && v.sc[i] ? `<span class="kc" title="kills / deaths">⚔${v.sc[i][0]}<span>/${v.sc[i][1]}</span></span>` : ''}</div>
-      <div class="wins">${stars}</div><div class="st"><span><i class="emo">💣</i>${p[6]}</span><span><i class="emo">🔥</i>${p[7]}</span><span><i class="emo">⚡</i>${p[8]}</span>${p[9] ? '<span><i class="emo">👢</i></span>' : ''}${p[10] ? '<span><i class="emo">👻</i></span>' : ''}${p[11] ? `<span><i class="emo">🌀</i>${p[11]}</span>` : ''}${p[12] & 1 ? '<span><i class="emo">📡</i></span>' : ''}${p[12] & 2 ? '<span><i class="emo">🎯</i></span>' : ''}${p[12] & 4 ? `<span><i class="emo">🧱</i>${Math.ceil(p[22] || 0)}</span>` : ''}${p[12] & 8 ? '<span><i class="emo">➖</i></span>' : ''}${p[13] ? `<span><i class="emo">💥</i>${p[13]}</span>` : ''}${p[14] > 1 ? `<span><i class="emo">❤️</i>${p[14]}</span>` : ''}${p[15] > 0 && p[15] > HIT_INV ? `<span><i class="emo">🛡️</i>${Math.ceil(p[15])}</span>` : ''}${p[16] ? `<span style="color:#fb7185"><i class="emo">💀</i>${CURSE_LABEL[p[16]] || ''} ${p[17]}</span>` : ''}${p[20] & 1 ? '<span><i class="emo">🧤</i></span>' : ''}${p[20] & 2 ? '<span><i class="emo">⭐</i></span>' : ''}${p[21] ? `<span><i class="emo">🧨</i>${p[21]}</span>` : ''}${p[18] > 0 ? `<span style="color:#7dd3fc"><i class="emo">❄️</i>${Math.ceil(p[18])}</span>` : ''}${p[19] > 0 ? `<span><i class="emo">👁️</i>${Math.ceil(p[19])}</span>` : ''}</div></div>`;
+      <div class="wins">${stars}</div><div class="st"><span><i class="emo">💣</i>${p[6]}</span><span><i class="emo">🔥</i>${p[7]}</span><span><i class="emo">⚡</i>${p[8]}</span>${p[9] ? '<span><i class="emo">👢</i></span>' : ''}${p[10] ? '<span><i class="emo">👻</i></span>' : ''}${p[11] ? `<span><i class="emo">🌀</i>${p[11]}</span>` : ''}${p[12] & 1 ? '<span><i class="emo">📡</i></span>' : ''}${p[12] & 2 ? '<span><i class="emo">🎯</i></span>' : ''}${p[12] & 4 ? `<span><i class="emo">🧱</i>${Math.ceil(p[21] || 0)}</span>` : ''}${p[12] & 8 ? '<span><i class="emo">➖</i></span>' : ''}${p[13] ? `<span><i class="emo">💥</i>${p[13]}</span>` : ''}${p[14] > 1 ? `<span><i class="emo">❤️</i>${p[14]}</span>` : ''}${p[15] > 0 && p[15] > HIT_INV ? `<span><i class="emo">🛡️</i>${Math.ceil(p[15])}</span>` : ''}${p[16] ? `<span style="color:#fb7185"><i class="emo">💀</i>${CURSE_LABEL[p[16]] || ''} ${p[17]}</span>` : ''}${p[19] & 1 ? '<span><i class="emo">🧤</i></span>' : ''}${p[19] & 2 ? '<span><i class="emo">⭐</i></span>' : ''}${p[20] ? `<span><i class="emo">🧨</i>${p[20]}</span>` : ''}${p[18] > 0 ? `<span><i class="emo">👁️</i>${Math.ceil(p[18])}</span>` : ''}</div></div>`;
   });
   const half = Math.ceil(cards.length / 2);
   $('#hud').innerHTML = cards.slice(0, half).join('') + `<div class="timer ${v.tm <= 0 ? 'sd' : ''}">${timer}</div>` + cards.slice(half).join('');

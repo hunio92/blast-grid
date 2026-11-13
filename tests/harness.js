@@ -38,10 +38,10 @@ function element(tag = 'div') {
   return el;
 }
 
-function loadGame() {
+function loadGame(opts = {}) {
   const els = new Map();
   const byId = id => { if (!els.has(id)) { const e = element(); e.id = id; els.set(id, e); } return els.get(id); };
-  const store = new Map();
+  const store = new Map(Object.entries(opts.store || {}));
   const listeners = {};
   const sandbox = {
     console,
