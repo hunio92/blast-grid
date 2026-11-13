@@ -1,0 +1,104 @@
+// Loads the inline <script> of blast-grid.html into a Node vm context with just enough DOM stubs to run the
+// simulation headlessly. Top-level let/const of the game script are shared with code passed to run().
+const fs = require('node:fs'), path = require('node:path'), vm = require('node:vm');
+
+const HTML = path.join(__dirname, '..', 'blast-grid.html');
+
+function gameScript() {
+  const html = fs.readFileSync(HTML, 'utf8');
+  const m = [...html.matchAll(/<script>([\s\S]*?)<\/script>/g)];
+  if (!m.length) throw new Error('inline <script> not found');
+  return m.map(x => x[1]).join('\n');
+}
+
+function ctx2d() {
+  const target = { measureText: () => ({ width: 0 }), createRadialGradient: () => ({ addColorStop() {} }), createLinearGradient: () => ({ addColorStop() {} }) };
+  return new Proxy(target, {
+    get: (t, k) => (k in t ? t[k] : () => {}),
+    set: (t, k, v) => { t[k] = v; return true; },
+  });
+}
+
+function element(tag = 'div') {
+  const classes = new Set();
+  const el = {
+    tagName: tag.toUpperCase(), value: '', textContent: '', innerHTML: '', disabled: false, hidden: false, id: '',
+    style: { setProperty() {} }, dataset: {}, children: [], width: 0, height: 0,
+    classList: {
+      add: (...c) => c.forEach(x => classes.add(x)), remove: (...c) => c.forEach(x => classes.delete(x)),
+      toggle: (c, on) => { const v = on === undefined ? !classes.has(c) : !!on; if (v) classes.add(c); else classes.delete(c); return v; },
+      contains: c => classes.has(c),
+    },
+    appendChild(c) { this.children.push(c); return c; },
+    addEventListener() {}, removeEventListener() {}, setPointerCapture() {}, releasePointerCapture() {},
+    getBoundingClientRect: () => ({ left: 0, top: 0, width: 100, height: 100, right: 100, bottom: 100 }),
+    getContext: () => ctx2d(), querySelector: () => element(), querySelectorAll: () => [],
+    click() { if (typeof this.onclick === 'function') this.onclick({}); },
+    attrs: {}, setAttribute(k, v) { this.attrs[k] = String(v); }, getAttribute(k) { return k in this.attrs ? this.attrs[k] : null; },
+  };
+  return el;
+}
+
+function loadGame(opts = {}) {
+  const els = new Map();
+  const byId = id => { if (!els.has(id)) { const e = element(); e.id = id; els.set(id, e); } return els.get(id); };
+  const store = new Map(Object.entries(opts.store || {}));
+  const listeners = {};
+  let math = Math;
+  if (opts.seed !== undefined) { // deterministic Math.random (mulberry32) so bot tests are repeatable
+    let t = opts.seed >>> 0;
+    math = Object.create(Math);
+    math.random = () => { t = (t + 0x6D2B79F5) >>> 0; let r = Math.imul(t ^ (t >>> 15), 1 | t); r ^= r + Math.imul(r ^ (r >>> 7), 61 | r); return ((r ^ (r >>> 14)) >>> 0) / 4294967296; };
+  }
+  const sandbox = {
+    console,
+    Math: math, JSON, Date, Map, Set, Array, Object, String, Number, Boolean, Promise, Error, Proxy, Float32Array, Int32Array, Uint8Array, Infinity, NaN,
+    performance: { now: () => sandbox.__now },
+    __now: 0,
+    __listeners: listeners,
+    __els: els,
+    document: {
+      querySelector: s => byId(s.startsWith('#') ? s.slice(1) : 'sel:' + s), // same stub element per selector
+      getElementById: byId,
+      querySelectorAll: () => [],
+      createElement: t => element(t),
+      documentElement: { style: { setProperty() {} } },
+      body: element('body'),
+      addEventListener() {},
+    },
+    localStorage: {
+      getItem: k => (store.has(k) ? store.get(k) : null),
+      setItem: (k, v) => store.set(k, String(v)),
+      removeItem: k => store.delete(k),
+    },
+    __store: store,
+    addEventListener: (type, fn) => { (listeners[type] || (listeners[type] = [])).push(fn); },
+    removeEventListener() {},
+    requestAnimationFrame: () => 0,
+    setInterval: () => 0, clearInterval() {}, setTimeout: () => 0, clearTimeout() {},
+    confirm: () => true, alert() {},
+    matchMedia: () => ({ matches: false, addEventListener() {}, addListener() {} }),
+    navigator: {},
+    URL: { createObjectURL: () => '' },
+    Blob: function Blob() {},
+  };
+  sandbox.window = sandbox;
+  const ctx = vm.createContext(sandbox);
+  vm.runInContext(gameScript(), ctx, { filename: 'blast-grid.html' });
+  const run = code => vm.runInContext(code, ctx);
+  return { run, ctx };
+}
+
+// Set up an offline match without going through the DOM.
+// opts: { humans = 2 (0 allowed in tests), bots = ['easy'|'normal'|'hard', ...], set: partial settings }
+function startLocal(run, opts = {}) {
+  const humans = opts.humans === undefined ? 2 : opts.humans;
+  run(`
+    resetAll(); mode = 'local'; mySlot = 0; localHumans = ${humans};
+    lobbyBots = ${JSON.stringify((opts.bots || []).map(level => ({ level })))};
+    SET = cleanSet(Object.assign({}, DEFAULT_SET, ${JSON.stringify(opts.set || {})}));
+    startMatch();
+  `);
+}
+
+module.exports = { loadGame, startLocal };

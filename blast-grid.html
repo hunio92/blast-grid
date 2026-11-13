@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Blast Grid</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
@@ -53,7 +53,19 @@
   .seg{display:flex;gap:8px}
   .seg button{flex:1;margin-top:0;padding:10px 4px;font-size:9px;background:transparent;color:var(--dim);border-color:var(--line);box-shadow:none}
   .seg button.on{background:var(--accent);color:#1a1205;border-color:#000;box-shadow:0 3px 0 #7c2d12}
-  .mapinfo{font-size:10px;color:var(--accent);margin-top:10px}
+  #lobby{width:min(640px,100%)}
+  .panel{max-height:calc(100vh - 32px);overflow:auto;scrollbar-color:var(--line) transparent}
+  .plist li .lv{margin-left:auto;font-size:9px;color:var(--dim)}
+  .plist li.bot{cursor:pointer}
+  .plist li.bot .lv{color:var(--accent)}
+  .plist li .x{flex:0 0 auto;width:auto;margin:0 0 0 8px;padding:4px 8px;font-size:9px;background:transparent;color:var(--danger);border-color:var(--line);box-shadow:none}
+  #setBox .seg button:disabled{opacity:1;cursor:default}
+  #setBox .seg button.on:disabled{opacity:1}
+  #setBox .seg button:not(.on):disabled{opacity:.45}
+  .pugrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(42px,1fr));gap:6px}
+  .pugrid button{margin:0;padding:6px 0;font-size:16px;background:#0b1020;border-color:var(--accent);box-shadow:none}
+  .pugrid button.off{border-color:var(--line);opacity:.35;filter:grayscale(1)}
+  .pugrid button:disabled{cursor:default}
   .kgrid{display:grid;grid-template-columns:auto 1fr 1fr;gap:8px 10px;align-items:center;font-size:9px;margin-top:14px}
   .kgrid .kh{color:var(--accent);text-align:center}
   .kgrid .ka{color:var(--dim)}
@@ -71,6 +83,40 @@
   .pu-r b{color:var(--text);font-weight:normal}
   .pu-r span:last-child{color:var(--dim)}
   .pu-i .emo{font-size:16px}
+
+  /* ---- touch (phones held sideways) ---- */
+  #touch,#tbar,#rotate{display:none}
+  body.touch input{font-size:16px} /* stops phones zooming in on focus */
+  body.touch.ingame{padding:0;overflow:hidden;touch-action:none;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+  body.touch #game{gap:2px;touch-action:none}
+  body.touch #foot{display:none}
+  body.touch #hud{gap:4px;flex-wrap:nowrap;width:calc(100vw - 116px);max-width:none;overflow:hidden;align-self:flex-start;margin:4px 0 0 6px}
+  body.touch .card{flex:1 1 0;max-width:230px;flex-direction:row;align-items:center;gap:5px;padding:2px 5px;min-width:0;border-width:2px;font-size:8px;overflow:hidden}
+  body.touch .card .nm{flex:1 1 auto;min-width:40px;max-width:none}
+  body.touch .card .wins,body.touch .card .st{flex:none}
+  body.touch .card .st{gap:4px}
+  body.touch .card .kc{display:none}
+  body.touch .card .st span:nth-child(n+3){display:none}
+  body.touch .timer{padding:2px 8px;font-size:11px;border-width:2px}
+  body.touch canvas{width:min(100vw,calc((100vh - 34px) * var(--ar)));width:min(100vw,calc((100dvh - 34px) * var(--ar)));border-width:2px;box-shadow:none}
+  body.touch #touch{display:block}
+  body.touch #tbar{display:flex}
+  #tbar{position:fixed;top:6px;right:8px;flex-direction:column;align-items:stretch;gap:6px;z-index:5;width:96px}
+  #tbar button{width:100%;margin:0;padding:7px 4px;font-size:8px;background:rgba(20,27,47,.85);color:var(--text);border:2px solid var(--line);box-shadow:none}
+  #tbar button.on{color:var(--accent);border-color:var(--accent)}
+  #stickZone{position:fixed;left:0;top:40px;bottom:0;width:45vw;z-index:4;touch-action:none}
+  #stickBase{position:absolute;width:120px;height:120px;margin:-60px 0 0 -60px;border-radius:50%;border:3px solid rgba(230,235,255,.35);background:rgba(20,27,47,.35);display:none;pointer-events:none}
+  #stickKnob{position:absolute;left:50%;top:50%;width:54px;height:54px;margin:-27px 0 0 -27px;border-radius:50%;background:rgba(255,176,32,.75);border:3px solid #000}
+  #stickHint{position:fixed;left:18px;bottom:18px;width:110px;height:110px;border-radius:50%;border:3px dashed rgba(230,235,255,.18);pointer-events:none;z-index:3}
+  #tBtns{position:fixed;right:12px;bottom:12px;z-index:4;display:grid;grid-template-columns:auto auto;grid-template-areas:"tele det" "bomb bomb";gap:10px;justify-items:end}
+  #tBtns button{margin:0;width:56px;height:56px;padding:0;border-radius:50%;font-size:8px;touch-action:none;box-shadow:0 3px 0 #000;opacity:.9}
+  #tBtns button.down{transform:translateY(2px);filter:brightness(1.3)}
+  #tBomb{grid-area:bomb;width:84px!important;height:84px!important;font-size:10px!important}
+  #tTele{grid-area:tele;background:#a78bfa}
+  #tDet{grid-area:det;background:#22d3ee}
+  #rotate{position:fixed;inset:0;z-index:20;background:var(--bg);flex-direction:column;align-items:center;justify-content:center;gap:18px;text-align:center;font-size:11px;line-height:2;padding:24px}
+  #rotate .emo{font-size:48px}
+  @media (orientation: portrait){ body.touch.ingame #rotate{display:flex} }
 </style>
 </head>
 <body>
@@ -81,16 +127,13 @@
   <div class="sub">Drop bombs. Blow up crates.<br>Be the last one standing.</div>
   <label for="name">YOUR NAME</label>
   <input id="name" maxlength="12" placeholder="Player">
-  <label>MAP SIZE (HOST / LOCAL)</label>
-  <div class="seg" id="sizeSeg">
-    <button data-s="S">CLASSIC<br><br>15×13</button><button data-s="M">LARGE<br><br>21×17</button><button data-s="L">HUGE<br><br>27×19</button>
-  </div>
   <button id="btnHost">HOST ONLINE GAME</button>
   <div class="row">
     <div><label for="code">ROOM CODE</label><input id="code" maxlength="6" placeholder="ABC12" style="text-transform:uppercase"></div>
     <button id="btnJoin" class="alt">JOIN</button>
   </div>
   <div class="sep"></div>
+  <button id="btnBots" class="alt"><i class="emo">🤖</i> PLAY VS BOTS</button>
   <button id="btnLocal" class="ghost">2 PLAYERS · SAME KEYBOARD</button>
   <div class="row"><button id="btnKeys" class="ghost" style="flex:1"><i class="emo">⌨️</i> CONTROLS</button><button id="btnPU" class="ghost" style="flex:1"><i class="emo">💣</i> POWER-UPS</button></div>
   <button id="btnScores" class="ghost"><i class="emo">🏆</i> SCOREBOARD</button>
@@ -100,7 +143,7 @@
 <!-- POWER-UPS -->
 <div id="pups" class="panel hidden">
   <h1 style="font-size:22px">POWER-UPS</h1>
-  <div class="hint" style="margin-top:0;text-align:center">Hidden in crates — blow them up to find them.</div>
+  <div class="hint" style="margin-top:0;text-align:center">Hidden in crates — blow them up to find them. The host can switch any of them off in the lobby.</div>
   <div class="pu-list">
     <div class="pu-h" style="color:var(--accent)">GOOD</div>
     <div class="pu-r"><span class="pu-i"><i class="emo">💣</i></span><b>+1 BOMB</b><span>drop one more bomb at a time</span></div>
@@ -143,26 +186,38 @@
   <h1 style="font-size:22px">CONTROLS</h1>
   <div class="hint" style="margin-top:0;text-align:center">Click a key, then press the new one (ESC cancels).<br>Saved in this browser only — your colleague sets their own.</div>
   <div class="kgrid" id="kgrid"></div>
-  <div class="hint">Online: both columns control your player. Same keyboard: left column is P1, right column is P2.<br>M (sound) and R (rematch) are reserved.</div>
+  <div class="hint">Online and vs bots: both columns control your player. Same keyboard: left column is P1, right column is P2.<br>M (sound) and R (rematch) are reserved.<br>On a phone: hold it sideways — on-screen stick on the left, BOMB / TELE / DET on the right.</div>
   <div class="status" id="keysStatus"></div>
   <div class="row"><button id="btnKeysReset" class="ghost">RESET DEFAULTS</button><button id="btnKeysDone" style="flex:1">DONE</button></div>
 </div>
 
-<!-- LOBBY -->
+<!-- LOBBY (online host / guest, and offline setup) -->
 <div id="lobby" class="panel hidden">
-  <h1 style="font-size:22px">LOBBY</h1>
+  <h1 style="font-size:22px" id="lobbyTitle">LOBBY</h1>
   <div id="hostBox">
     <label>ROOM CODE — SEND THIS TO YOUR COLLEAGUE</label>
     <div class="code" id="roomCode">·····</div>
     <button id="btnCopy" class="ghost" style="margin-top:0">COPY CODE</button>
   </div>
   <label>PLAYERS (2–4)</label>
-  <div class="mapinfo" id="lobbyMap"></div>
   <ul class="plist" id="plist"></ul>
+  <div class="row" id="addRow"><button id="btnAddBot" class="ghost" style="flex:1;margin-top:0"><i class="emo">🤖</i> + ADD BOT</button><button id="btnP2" class="ghost" style="flex:1;margin-top:0">+ PLAYER 2</button></div>
+  <div id="setBox">
+    <label>MAP SIZE</label>
+    <div class="seg" id="sizeSeg"><button data-v="S">CLASSIC<br><br>15×13</button><button data-v="M">LARGE<br><br>21×17</button><button data-v="L">HUGE<br><br>27×19</button></div>
+    <label>WINS TO TAKE THE MATCH</label>
+    <div class="seg" id="winsSeg"><button data-v="1">1</button><button data-v="2">2</button><button data-v="3">3</button><button data-v="4">4</button><button data-v="5">5</button></div>
+    <label>ROUND TIME</label>
+    <div class="seg" id="timeSeg"><button data-v="auto">AUTO</button><button data-v="90">1:30</button><button data-v="150">2:30</button><button data-v="240">4:00</button></div>
+    <label>CRATES</label>
+    <div class="seg" id="crateSeg"><button data-v="few">FEW</button><button data-v="normal">NORMAL</button><button data-v="many">MANY</button></div>
+    <label id="puLabel">POWER-UPS — CLICK TO TURN ONE OFF</label>
+    <div class="pugrid" id="puGrid"></div>
+  </div>
   <button id="btnStart" disabled>START MATCH</button>
   <button id="btnLeave" class="ghost">LEAVE</button>
   <div class="status" id="lobbyStatus"></div>
-  <div class="hint">Your colleague opens this same HTML file, types the code and presses JOIN. First to 3 round wins takes the match.</div>
+  <div class="hint" id="lobbyHint"></div>
 </div>
 
 <!-- GAME -->
@@ -175,7 +230,16 @@
     <span>TAB: SCORES · M: SOUND</span>
     <button id="btnQuit" class="ghost">QUIT</button>
   </div>
+  <div id="tbar">
+    <button id="tScores">SCORES</button><button id="tSound">SOUND</button><button id="tRematch" class="hidden">REMATCH</button><button id="tQuit">QUIT</button>
+  </div>
+  <div id="touch">
+    <div id="stickHint"></div>
+    <div id="stickZone"><div id="stickBase"><div id="stickKnob"></div></div></div>
+    <div id="tBtns"><button id="tTele">TELE</button><button id="tDet">DET</button><button id="tBomb">BOMB</button></div>
+  </div>
 </div>
+<div id="rotate"><i class="emo">📱↻</i>TURN YOUR PHONE SIDEWAYS<br>to keep playing</div>
 
 <script>
 "use strict";
@@ -187,13 +251,12 @@ const SIZES = {
   M: { w: 21, h: 17, time: 200, label: 'LARGE 21×17' },
   L: { w: 27, h: 19, time: 250, label: 'HUGE 27×19' },
 };
-let mapSize = 'M', roundTime = 200;
-try { const s = localStorage.getItem('bg-size'); if (SIZES[s]) mapSize = s; } catch (e) {}
+let roundTime = 200;
 const COLORS = ['#f8fafc', '#38bdf8', '#fb7185', '#a3e635'];
 const DARK   = ['#94a3b8', '#0369a1', '#be123c', '#4d7c0f'];
 const spawnPoints = () => [[1, 1], [W - 2, H - 2], [W - 2, 1], [1, H - 2]];
 const FUSE = 2.4, FLAME_T = 0.55, WIN_TARGET = 3, MAX_PLAYERS = 4;
-const ID_PREFIX = 'blastgrid-v5-'; // bump when the network format changes so old and new versions don't mix
+const ID_PREFIX = 'blastgrid-v6-'; // bump when the network format changes so old and new versions don't mix
 const idx = (x, y) => y * W + x;
 const $ = s => document.querySelector(s);
 
@@ -234,9 +297,42 @@ function buildSpiral() {
 const PU_TABLE = [['b', 10], ['f', 10], ['s', 7],
   ...['k', 't', 'g', 'r', 'p', 'u', 'v', 'h', 'w', 'l', 'm', 'x', 'o', 'j', 'y', 'i'].map(t => [t, 5]),
   ['d', 3], ['n', 3], ['e', 3]];
-const PU_TOTAL = PU_TABLE.reduce((a, [, w]) => a + w, 0);
-function randPU() { let r = Math.random() * PU_TOTAL; for (const [t, w] of PU_TABLE) if ((r -= w) < 0) return t; return 'b'; }
-const MAX_RANGE = 8, REMOTE_FUSE = 8, VEST_TIME = 8, HIT_INV = 1.5, CURSE_TIME = 10, FREEZE_TIME = 2.5, INVIS_TIME = 8, MINE_ARM = 1.0;
+function randPU(table = PU_TABLE) {
+  let r = Math.random() * table.reduce((a, [, w]) => a + w, 0);
+  for (const [t, w] of table) if ((r -= w) < 0) return t;
+  return table.length ? table[0][0] : null;
+}
+
+// ---- match settings (host / offline; guests get them in the lobby message) ----
+const PU_ALL = PU_TABLE.map(([t]) => t);
+const PU_ICON = { b: '💣', f: '🔥', s: '⚡', k: '👢', t: '🌀', g: '👻', r: '📡', p: '🎯', u: '♨️', v: '🛡️', h: '❤️', w: '🧱', l: '➖', m: '💥', x: '💀', o: '🧤', j: '🧨', y: '⭐', i: '👁️', d: '🔻', n: '⬇️', e: '🐢' };
+const PU_NAME = { b: '+1 BOMB', f: 'FIRE', s: 'SPEED', k: 'KICK', t: 'TELEPORT', g: 'GHOST', r: 'REMOTE', p: 'PIERCE', u: 'MAX FIRE', v: 'VEST', h: 'HEART', w: 'WALL PASS', l: 'LINE BOMB', m: 'POWER BOMB', x: 'SKULL', o: 'GLOVE', j: 'MINES', y: 'STAR BOMB', i: 'INVISIBLE', d: 'FIRE DOWN', n: 'BOMB DOWN', e: 'SPEED DOWN' };
+const DEFAULT_SET = { size: 'M', wins: 3, time: 'auto', crates: 'normal', off: [] };
+const TIME_OPTS = { auto: null, 90: 90, 150: 150, 240: 240 };
+const CRATE_P = { few: 0.55, normal: 0.75, many: 0.9 };
+function cleanSet(o) {
+  o = o && typeof o === 'object' ? o : {};
+  const wins = +o.wins;
+  return {
+    size: SIZES[o.size] ? o.size : DEFAULT_SET.size,
+    wins: wins >= 1 && wins <= 5 && Number.isInteger(wins) ? wins : DEFAULT_SET.wins,
+    time: String(o.time) in TIME_OPTS ? String(o.time) : DEFAULT_SET.time,
+    crates: o.crates in CRATE_P ? o.crates : DEFAULT_SET.crates,
+    off: Array.isArray(o.off) ? [...new Set(o.off.filter(t => PU_ALL.includes(t)))] : [],
+  };
+}
+let SET = (() => {
+  try {
+    const raw = JSON.parse(localStorage.getItem('bg-set') || 'null');
+    if (raw) return cleanSet(raw);
+    const old = localStorage.getItem('bg-size'); // map size saved by older versions
+    return cleanSet({ size: old });
+  } catch (e) { return cleanSet({}); }
+})();
+function saveSet() { try { localStorage.setItem('bg-set', JSON.stringify(SET)); } catch (e) { } }
+function roundTimeFor(set) { return TIME_OPTS[set.time] || SIZES[set.size].time; }
+function puTableFor(off) { return PU_TABLE.filter(([t]) => !off.includes(t)); }
+const MAX_RANGE = 8, REMOTE_FUSE = 8, VEST_TIME = 8, HIT_INV = 1.5, CURSE_TIME = 10, INVIS_TIME = 8, MINE_ARM = 1.0;
 const SOFT_TIME = 5;
 const PORTAL_COLORS = ['#c084fc', '#2dd4bf', '#fb923c'];
 const DIRV = { l: [-1, 0], r: [1, 0], u: [0, -1], d: [0, 1] };
@@ -263,25 +359,25 @@ function newRound() {
     portals.push([a, b]);
     for (const [cx, cy] of [[x, y], [mx, my]]) for (const [dx, dy] of [[0,0],[1,0],[-1,0],[0,1],[0,-1]]) clear.add(idx(cx + dx, cy + dy));
   }
-  const hidden = new Map();
+  const hidden = new Map(), set = M.set || SET, table = puTableFor(set.off), crateP = CRATE_P[set.crates];
   for (let i = 0; i < grid.length; i++) {
-    if (grid[i] === '.' && !safe.has(i) && !clear.has(i) && Math.random() < 0.75) {
+    if (grid[i] === '.' && !safe.has(i) && !clear.has(i) && Math.random() < crateP) {
       grid[i] = '+';
-      if (Math.random() < 0.34) hidden.set(i, randPU());
+      if (table.length && Math.random() < 0.34) hidden.set(i, randPU(table));
     }
   }
   S = {
     grid, hidden, pu: new Map(), bombs: [], flames: new Map(), fx: [], portals, portalAt: new Map(portals.flatMap(([a, b]) => [[a, b], [b, a]])),
     players: M.players.map((pl, i) => makePlayer(i, pl.connected !== false)),
-    phase: 'count', t: 3, time: roundTime, spiral: buildSpiral(), sdT: 0, banner: '',
+    phase: 'count', t: 3, time: roundTime, spiral: buildSpiral(), sdT: 0, banner: '', bots: {},
   };
   S.sdStep = Math.min(0.14, 24 / (S.spiral.length * 0.75)); // sudden death takes ~24s whatever the map size
 }
 
 // per-match stats kept on every M.players entry (host/local), sent to guests in snapshots as `sc`
-function newPl(name, keep) {
+function newPl(name, keep, bot) {
   const k = keep || {};
-  return { name, wins: k.wins || 0, kills: k.kills || 0, deaths: k.deaths || 0, selfK: k.selfK || 0, crates: k.crates || 0, items: k.items || 0 };
+  return { name, bot: bot || undefined, wins: k.wins || 0, kills: k.kills || 0, deaths: k.deaths || 0, selfK: k.selfK || 0, crates: k.crates || 0, items: k.items || 0 };
 }
 function stat(slot, key) { const pl = M && M.players[slot]; if (pl) pl[key] = (pl[key] || 0) + 1; }
 
@@ -291,7 +387,7 @@ function makePlayer(i, alive) {
     slot: i, x: sp[0], y: sp[1], alive, dir: 'd', walk: 0,
     maxBombs: 1, range: 2, speed: 0, kick: false, ghost: false, tele: 0, bombsOut: 0, deathT: 9,
     remote: false, pierce: false, softT: 0, line: false, power: 0, hp: 1, inv: 0, curse: '', curseT: 0, autoT: 0,
-    glove: false, star: false, mines: 0, frozen: 0, invis: 0, portalLock: -1,
+    glove: false, star: false, mines: 0, invis: 0, portalLock: -1,
     lastSeq: (inputs[i] && inputs[i].bombSeq) || 0, lastTele: (inputs[i] && inputs[i].teleSeq) || 0, lastDet: (inputs[i] && inputs[i].detSeq) || 0,
   };
 }
@@ -309,7 +405,7 @@ function blocked(x, y, p) {
 // Can a sliding bomb enter tile (x,y)?
 function bombFree(x, y, self) {
   if (x < 0 || y < 0 || x >= W || y >= H || S.grid[idx(x, y)] !== '.' || S.portalAt.has(idx(x, y))) return false;
-  if (S.bombs.some(q => q !== self && !q.dead && q.x === x && q.y === y)) return false;
+  if (S.bombs.some(q => q !== self && !q.dead && !q.mine && q.x === x && q.y === y)) return false; // hidden mines don't stop bombs (that would reveal them)
   return !S.players.some(p => p.alive && Math.abs(p.x - x) < 0.9 && Math.abs(p.y - y) < 0.9);
 }
 
@@ -519,6 +615,7 @@ function explode(b) {
       addFlame(x, y, fk, b.owner);
     }
   }
+  for (const q of S.bombs) if (!q.dead && !q.fly && q.x === b.x && q.y === b.y) explode(q); // e.g. a bomb resting on a mine
 }
 
 // by: slot whose bomb did it, -1 = the arena (sudden death), null = left the game (not counted)
@@ -566,6 +663,7 @@ function tick(dt) {
     S.bombs = S.bombs.filter(b => !b.dead);
   }
 
+  for (const p of S.players) if (p.alive && M.players[p.slot] && M.players[p.slot].bot) botThink(p, dt);
   for (const p of S.players) {
     if (!p.alive) continue;
     const inp = inputs[p.slot] || {};
@@ -573,13 +671,6 @@ function tick(dt) {
     if (p.curseT > 0) { p.curseT -= dt; if (p.curseT <= 0) { p.curse = ''; p.curseT = 0; } }
     if (p.invis > 0) p.invis = Math.max(0, p.invis - dt);
     if (p.softT > 0) { p.softT -= dt; if (p.softT <= 0) { p.softT = 0; unstick(p); } }
-    if (p.frozen > 0) { // frozen: no moving, and button presses made while frozen are dropped
-      p.frozen = Math.max(0, p.frozen - dt);
-      if (inp.bombSeq !== undefined) p.lastSeq = inp.bombSeq;
-      if (inp.teleSeq !== undefined) p.lastTele = inp.teleSeq;
-      if (inp.detSeq !== undefined) p.lastDet = inp.detSeq;
-      continue;
-    }
     movePlayer(p, inp, dt);
     if (inp.bombSeq !== undefined && inp.bombSeq !== p.lastSeq) { p.lastSeq = inp.bombSeq; placeBomb(p); }
     if (inp.teleSeq !== undefined && inp.teleSeq !== p.lastTele) { p.lastTele = inp.teleSeq; teleport(p); }
@@ -670,11 +761,323 @@ function snapshot() {
     f: [...S.flames].map(([i, f]) => [i, f.k, +f.t.toFixed(2)]),
     p: S.players.map(p => [+p.x.toFixed(3), +p.y.toFixed(3), p.alive ? 1 : 0, p.dir, +p.walk.toFixed(2), +Math.min(p.deathT, 9).toFixed(2), p.maxBombs, p.range, p.speed, p.kick ? 1 : 0, p.ghost ? 1 : 0, p.tele,
       (p.remote ? 1 : 0) | (p.pierce ? 2 : 0) | (p.softT > 0 ? 4 : 0) | (p.line ? 8 : 0), p.power, p.hp, +p.inv.toFixed(2), p.curse, Math.ceil(p.curseT),
-      +p.frozen.toFixed(2), +p.invis.toFixed(2), (p.glove ? 1 : 0) | (p.star ? 2 : 0), p.mines, +p.softT.toFixed(2)]),
-    ph: S.phase, ct: +S.t.toFixed(2), tm: +S.time.toFixed(2), rt: roundTime, w: W, h: H, ban: S.banner, mid: M.id,
+      +p.invis.toFixed(2), (p.glove ? 1 : 0) | (p.star ? 2 : 0), p.mines, +p.softT.toFixed(2)]),
+    ph: S.phase, ct: +S.t.toFixed(2), tm: +S.time.toFixed(2), rt: roundTime, wt: M.target, w: W, h: H, ban: S.banner, mid: M.id,
     sc: M.players.map(q => [q.kills || 0, q.deaths || 0, q.selfK || 0, q.crates || 0, q.items || 0]),
-    names: M.players.map(q => q.name), wins: M.players.map(q => q.wins), con: M.players.map(q => q.connected !== false),
+    names: M.players.map(q => q.name), bt: M.players.map(q => q.bot || ''), wins: M.players.map(q => q.wins), con: M.players.map(q => q.connected !== false),
   };
+}
+
+// ================== BOTS ==================
+// Bots run on the host / offline sim only. Each tick they write the same input object a human produces into
+// inputs[slot], so the rules, the snapshots and the guests don't know or care that a player is a bot.
+const BOT_LEVELS = {
+  // blunder: chance to drop a bomb without checking the way out
+  easy:   { react: 0.5,  chain: false, avoidBad: false, hunt: 0.1, remote: false, tele: false, blunder: 0.08 },
+  normal: { react: 0.25, chain: true,  avoidBad: true,  hunt: 0.5, remote: true,  tele: false, blunder: 0 },
+  hard:   { react: 0.08, chain: true,  avoidBad: true,  hunt: 1,   remote: true,  tele: true,  blunder: 0 },
+};
+const BOT_CYCLE = { easy: 'normal', normal: 'hard', hard: 'easy' };
+const BAD_PU = new Set(['d', 'n', 'e', 'x']);
+const DIRS4 = [[1, 0], [-1, 0], [0, 1], [0, -1]];
+const DIRS8 = DIRS4.concat([[1, 1], [1, -1], [-1, 1], [-1, -1]]);
+
+// Tiles a blast from v = { x, y, range, pierce, star } reaches on the current grid. bombAt(i) says whether a bomb sits
+// on tile i (the blast stops there and sets it off). Returns { tiles, hitBombs, crates }.
+function blastFrom(v, bombAt) {
+  const tiles = [idx(v.x, v.y)], hitBombs = [], crates = [];
+  for (const [dx, dy] of v.star ? DIRS8 : DIRS4) {
+    const diag = dx !== 0 && dy !== 0, maxR = diag ? Math.max(1, Math.ceil(v.range / 2)) : v.range;
+    for (let r = 1; r <= maxR; r++) {
+      const x = v.x + dx * r, y = v.y + dy * r;
+      if (x < 0 || y < 0 || x >= W || y >= H) break;
+      const i = idx(x, y), c = S.grid[i];
+      if (c === '#') { if (diag && x > 0 && y > 0 && x < W - 1 && y < H - 1) continue; break; }
+      tiles.push(i);
+      if (c === '+') { crates.push(i); if (v.pierce) continue; break; }
+      if (bombAt(i)) { hitBombs.push(i); break; }
+      // a power-up stops a real blast, but anyone may pick it up first: plan as if the blast goes through
+    }
+  }
+  return { tiles, hitBombs, crates };
+}
+
+// The bombs a bot knows about, as plain records. Enemy mines are hidden; its own mines only go off when a blast reaches
+// them, so they start at t = Infinity and only the chain pass gives them a time.
+function visibleBombs(forSlot) {
+  return S.bombs.filter(b => !b.dead && (!b.mine || b.owner === forSlot)).map(b => {
+    if (b.mine) return { x: b.x, y: b.y, range: b.range, pierce: false, star: false, t: Infinity, own: true, mine: true };
+    const land = b.fly ? { x: b.fly.tx, y: b.fly.ty } : { x: b.x, y: b.y };
+    const t = b.fly ? Math.max(b.fuse, b.fly.dur - b.fly.t) : b.fuse;
+    // someone else's remote bomb can go off any moment: its blast is "risky" (fine to cross, not to stay in)
+    return { x: land.x, y: land.y, range: b.range, pierce: b.pierce, star: b.star, t, own: b.owner === forSlot, risky: b.remote && b.owner !== forSlot };
+  });
+}
+
+// Seconds until each tile burns: 0 = burning now, Infinity = safe. extra: virtual bombs (same record shape).
+// D.perm marks tiles that sudden death will fill (deadly forever from that time on); D.risky marks tiles in the blast
+// of someone else's remote bomb.
+function dangerMap(forSlot, chain, extra = []) {
+  const D = new Float32Array(W * H).fill(Infinity), perm = new Uint8Array(W * H), risky = new Uint8Array(W * H);
+  const list = visibleBombs(forSlot).concat(extra.map(e => Object.assign({}, e)));
+  const at = new Map(); list.forEach((v, k) => { const i = idx(v.x, v.y); (at.get(i) || at.set(i, []).get(i)).push(k); });
+  const blasts = list.map(v => blastFrom(v, i => at.has(i))); // any bomb or known mine stops a blast and goes off
+  if (chain || list.some(v => v.mine)) { // own mines are always chained: they only ever go off that way // a blast that reaches another bomb sets it off: relax the fuse times until nothing changes
+    for (let changed = true, n = 0; changed && n <= list.length; n++) {
+      changed = false;
+      list.forEach((v, k) => {
+        const hits = blasts[k].hitBombs.concat([idx(v.x, v.y)]);
+        for (const i of hits) for (const j of at.get(i) || []) if (list[j].t > v.t) { list[j].t = v.t; changed = true; }
+      });
+    }
+  }
+  list.forEach((v, k) => { for (const i of blasts[k].tiles) { if (v.t < D[i]) D[i] = v.t; if (v.risky) risky[i] = 1; } });
+  for (const i of S.flames.keys()) D[i] = 0;
+  if (S.time < 5) { // sudden death: the next tiles of the spiral become walls
+    let k = 0;
+    for (const [x, y] of S.spiral) {
+      const i = idx(x, y); if (S.grid[i] === '#') continue;
+      const T = Math.max(0, S.time) + k * S.sdStep; if (T > 6) break;
+      if (T < D[i] || !perm[i]) { D[i] = Math.min(D[i], T); perm[i] = 1; }
+      k++;
+    }
+  }
+  D.perm = perm; D.risky = risky;
+  return D;
+}
+
+function botLevel(p) { return BOT_LEVELS[M.players[p.slot] && M.players[p.slot].bot] || BOT_LEVELS.normal; }
+const tileOf = p => idx(Math.round(p.x), Math.round(p.y));
+function stepTime(p) { const mult = p.curse === 'slow' ? 0.5 : p.curse === 'rush' ? 1.8 : 1; return 1 / ((3.2 + 0.55 * p.speed) * mult); }
+function bombRange(p) { return p.power > 0 ? MAX_RANGE : p.curse === 'weak' ? 1 : p.range; }
+
+const seen = (D, i) => D[i];
+const safeForever = (D, i, lv) => seen(D, i, lv) === Infinity && !D.risky[i];
+const safeForNow = (D, i) => D[i] === Infinity;
+// Safety margins (seconds): plan conservatively, execute with what's left.
+const M_ESCAPE = 0.12, M_PLACE = 0.4, M_GOAL = 0.5;
+// Is it safe to be on tile i between times a and b?
+function safeAt(D, i, a, b, lv, m) {
+  const d = seen(D, i, lv);
+  if (d === Infinity) return true;
+  if (D.perm[i]) return b < d - m;
+  return b < d - m || a > d + FLAME_T + m;
+}
+
+// BFS over tiles the bot can walk on, keeping only tiles that are safe while the bot passes them. Times are measured
+// from the bot's real position when it starts on its own tile (it may be partway across). blockedTiles: tiles with
+// bombs. m: safety margin. Returns { prev, dist, order }.
+function botBFS(p, lv, D, t0, start, blockedTiles, m = M_ESCAPE) {
+  const stepT = stepTime(p), prev = new Int32Array(W * H).fill(-1), dist = new Int16Array(W * H).fill(-1), order = [start];
+  const enter = new Float32Array(W * H), fromBody = start === tileOf(p);
+  dist[start] = 0; enter[start] = t0;
+  for (let q = 0; q < order.length; q++) {
+    const i = order[q], k = dist[i], x = i % W, y = (i / W) | 0;
+    for (const [dx, dy] of DIRS4) {
+      const nx = x + dx, ny = y + dy; if (nx < 1 || ny < 1 || nx > W - 2 || ny > H - 2) continue;
+      const n = idx(nx, ny);
+      if (dist[n] >= 0 || S.grid[n] !== '.' || S.portalAt.has(n)) continue;
+      if (blockedTiles.has(n) && !p.ghost) continue;
+      if (lv.avoidBad && BAD_PU.has(S.pu.get(n))) continue;
+      const tA = k === 0 ? t0 + Math.max(0, (fromBody ? Math.abs(nx - p.x) + Math.abs(ny - p.y) : 1) - 0.5) * stepT : enter[i] + stepT;
+      if (!safeAt(D, n, tA, tA + stepT * 1.1, lv, m)) continue;
+      dist[n] = k + 1; prev[n] = i; enter[n] = tA; order.push(n);
+    }
+  }
+  return { prev, dist, order };
+}
+function pathTo(bfs, goal) { const out = []; for (let i = goal; bfs.dist[i] > 0; i = bfs.prev[i]) out.push(i); return out.reverse(); }
+function bombTileSet(extra = []) {
+  const s = new Set(S.bombs.filter(b => !b.dead && !b.mine).map(b => b.fly ? idx(b.fly.tx, b.fly.ty) : idx(b.x, b.y)));
+  for (const e of extra) s.add(idx(e.x, e.y));
+  return s;
+}
+
+// Opponents a bot may target: alive, not on its team (no teams), and visible
+function visibleFoes(p) { return S.players.filter(q => q.alive && q.slot !== p.slot && !(q.invis > 0)); }
+
+// The bombs placing one at tile `at` would add (line bomb drops the rest in a row)
+function virtualBombs(p, at, t0) {
+  const x = at % W, y = (at / W) | 0, v = { x, y, range: bombRange(p), pierce: p.pierce, star: p.star, t: t0 + FUSE };
+  const out = [v];
+  if (p.line) {
+    const [dx, dy] = DIRV[p.dir];
+    for (let r = 1; out.length < p.maxBombs - p.bombsOut; r++) {
+      const nx = x + dx * r, ny = y + dy * r, i = idx(nx, ny);
+      if (S.grid[i] !== '.' || S.portalAt.has(i) || S.bombs.some(b => !b.dead && b.x === nx && b.y === ny)) break;
+      out.push(Object.assign({}, v, { x: nx, y: ny }));
+    }
+  }
+  return out;
+}
+
+// Could subject p get to a safe tile if bombs `extra` were placed (starting from tile `from` at time t0)?
+function canEscape(p, lv, from, t0, extra) {
+  const D = dangerMap(p.slot, true, extra), blocked = bombTileSet(extra);
+  blocked.delete(from);
+  const bfs = botBFS(p, lv, D, t0, from, blocked, M_PLACE);
+  return bfs.order.some(i => i !== from && safeForever(D, i, lv));
+}
+function canEscapeAfterBomb(p, lv = botLevel(p), at = tileOf(p), t0 = 0) {
+  return canEscape(p, lv, at, t0, virtualBombs(p, at, t0));
+}
+// enemy mines are invisible to the bot: it can still pick that tile (placing fails there, just like for a human)
+const knownBombAt = (p, i) => S.bombs.some(b => !b.dead && idx(b.x, b.y) === i && (!b.mine || b.owner === p.slot));
+function canPlaceAt(p, i) {
+  return p.curse !== 'nobomb' && p.bombsOut < p.maxBombs && S.grid[i] === '.' && !S.portalAt.has(i) && !knownBombAt(p, i);
+}
+
+// What a bomb at tile i would achieve: new crates broken, foes caught (by tile)
+function bombValue(p, i, D, foes) {
+  const v = { x: i % W, y: (i / W) | 0, range: bombRange(p), pierce: p.pierce, star: p.star };
+  const bl = blastFrom(v, j => S.bombs.some(b => !b.dead && !b.mine && idx(b.x, b.y) === j));
+  const crates = bl.crates.filter(c => D[c] === Infinity).length; // crates another bomb isn't already taking
+  const set = new Set(bl.tiles);
+  const caught = foes.filter(q => set.has(tileOf(q)));
+  return { crates, caught };
+}
+
+function botPlan(p, lv, mem) {
+  const start = tileOf(p), D = dangerMap(p.slot, lv.chain), blocked = bombTileSet();
+  blocked.delete(start);
+  mem.path = []; const prevGoal = mem.goal; mem.goal = -1;
+
+  // 1. in danger: run to the nearest tile that stays safe
+  if (!safeForever(D, start, lv)) {
+    // if nothing is safe with a margin, take the best chance there is; a remote bomb's blast beats a sure one
+    for (const [m, ok] of [[M_ESCAPE, safeForever], [0, safeForever], [M_ESCAPE, safeForNow], [0, safeForNow]]) {
+      const bfs = botBFS(p, lv, D, 0, start, blocked, m);
+      const goal = bfs.order.find(i => i !== start && ok(D, i, lv));
+      if (goal !== undefined) { mem.path = pathTo(bfs, goal); return; }
+    }
+    if (lv.tele && p.tele > 0) botTeleport(p, lv, mem, D);
+    return;
+  }
+
+  // 2. remote bombs: set them off when it hurts someone, or once they've had time to clear crates
+  if (lv.remote && p.remote && botRemote(p, mem, start)) return; // stand still while it goes off
+
+  const foes = visibleFoes(p), hunting = Math.random() < lv.hunt;
+
+  // 3. mines: lay them where we stand (the button lays a mine while we have any)
+  if (p.mines > 0 && p.curse !== 'nobomb' && S.grid[start] === '.' && !S.portalAt.has(start) && !knownBombAt(p, start)) { mem.in.bombSeq++; return; }
+
+  // 4. a bomb right here would do something useful, and there's a way out
+  if (canPlaceAt(p, start)) {
+    const val = bombValue(p, start, D, hunting ? foes : []);
+    if ((val.crates > 0 || val.caught.length) && (Math.random() < lv.blunder || canEscapeAfterBomb(p, lv, start, 0))) { mem.in.bombSeq++; return; }
+  }
+
+  // 5. pick a goal: a power-up, a spot that breaks crates, or a spot that catches a foe
+  const bfs = botBFS(p, lv, D, 0, start, blocked, M_GOAL);
+  const stepT = stepTime(p), cands = [];
+  for (const i of bfs.order) {
+    const k = bfs.dist[i], t = S.pu.get(i);
+    if (t && i !== start && (!lv.avoidBad || !BAD_PU.has(t))) cands.push({ i, score: 40 - 2 * k });
+    if (k > 12 || !canPlaceAt(p, i) && i !== start) continue;
+    const val = bombValue(p, i, D, hunting ? foes : []);
+    let score = val.crates ? 12 * val.crates - 2 * k : -Infinity;
+    if (val.caught.length) score = Math.max(score, 30 * val.caught.length - 1.5 * k);
+    if (score > -Infinity && i !== start) cands.push({ i, score, bomb: true, caught: val.caught });
+  }
+  cands.sort((a, b) => b.score - a.score);
+  const keep = cands.findIndex(c => c.i === prevGoal); // stick with the current goal unless something clearly better shows up
+  if (keep > 0 && cands[keep].score >= cands[0].score - 6) cands.unshift(cands.splice(keep, 1)[0]);
+  let checked = 0;
+  for (const c of cands) {
+    if (c.bomb) {
+      if (++checked > 6) continue;
+      if (!canEscapeAfterBomb(p, lv, c.i, bfs.dist[c.i] * stepT)) continue;
+    }
+    mem.goal = c.i; mem.path = pathTo(bfs, c.i); return;
+  }
+
+  // 6. nothing to do: hunt the nearest foe, or wander a little
+  if (hunting && foes.length) {
+    let best = -1, bd = Infinity;
+    for (const i of bfs.order) for (const q of foes) {
+      const d = Math.abs(i % W - Math.round(q.x)) + Math.abs(((i / W) | 0) - Math.round(q.y));
+      if (d < bd) { bd = d; best = i; }
+    }
+    if (best >= 0 && best !== start) { mem.path = pathTo(bfs, best); return; }
+  }
+  const near = bfs.order.filter(i => i !== start && bfs.dist[i] <= 6 && safeForever(D, i, lv));
+  if (near.length && Math.random() < 0.3) mem.path = pathTo(bfs, near[Math.random() * near.length | 0]);
+}
+
+function botRemote(p, mem, start) {
+  const mine = S.bombs.filter(b => !b.dead && b.remote && b.owner === p.slot && !b.fly);
+  if (!mine.length) return false;
+  const D = dangerMap(p.slot, true, mine.map(b => ({ x: b.x, y: b.y, range: b.range, pierce: b.pierce, star: b.star, t: 0 })));
+  if (D[start] !== Infinity) return false; // still standing in our own blast
+  const foeHit = visibleFoes(p).some(q => D[tileOf(q)] === 0);
+  const old = mine.every(b => REMOTE_FUSE - b.fuse > 1.0);
+  if (!foeHit && !old) return false;
+  mem.in.detSeq++;
+  return true;
+}
+
+// Trapped: blink to a safe tile 1–4 tiles away in some direction (same landing rules as teleport())
+function botTeleport(p, lv, mem, D) {
+  const x0 = Math.round(p.x), y0 = Math.round(p.y);
+  for (const d of ['l', 'r', 'u', 'd']) {
+    const [dx, dy] = DIRV[d];
+    for (let r = 4; r >= 1; r--) {
+      const x = x0 + dx * r, y = y0 + dy * r;
+      if (x < 1 || y < 1 || x > W - 2 || y > H - 2) continue;
+      const i = idx(x, y);
+      if (S.grid[i] !== '.' || S.flames.has(i) || S.bombs.some(b => !b.dead && b.x === x && b.y === y)) continue;
+      if (safeForever(D, i, lv)) { mem.teleDir = d; mem.in.teleSeq++; }
+      break; // teleport() takes the first valid landing tile in this direction
+    }
+    if (mem.teleDir) return;
+  }
+}
+
+// Press the keys that move the bot toward the next tile of its path
+function botSteer(p, mem, dt) {
+  const inp = mem.in;
+  inp.up = inp.down = inp.left = inp.right = false;
+  if (mem.teleDir) { // face the teleport direction this tick (movement sets p.dir before teleport() runs)
+    const d = mem.teleDir; mem.teleDir = null;
+    inp[{ l: 'left', r: 'right', u: 'up', d: 'down' }[d]] = true;
+    return;
+  }
+  const tol = Math.max(0.12, dt / stepTime(p));
+  while (mem.path.length) {
+    const t = mem.path[0];
+    if (Math.abs(p.x - t % W) < tol && Math.abs(p.y - ((t / W) | 0)) < tol) mem.path.shift(); else break;
+  }
+  if (!mem.path.length) { // nowhere to go: settle on the middle of the current tile, never astride two tiles
+    mem.stuck = 0;
+    const c = tileOf(p), cx = c % W - p.x, cy = ((c / W) | 0) - p.y;
+    if (Math.abs(cx) <= 0.04 && Math.abs(cy) <= 0.04) return;
+    mem.path = [c];
+  }
+  const t = mem.path[0], dx = t % W - p.x, dy = ((t / W) | 0) - p.y;
+  let key;
+  if (Math.abs(dx) >= Math.abs(dy)) { key = dx < 0 ? 'left' : 'right'; inp.pri = 'h'; }
+  else { key = dy < 0 ? 'up' : 'down'; inp.pri = 'v'; }
+  if (p.curse === 'rev') key = { left: 'right', right: 'left', up: 'down', down: 'up' }[key];
+  inp[key] = true;
+  // not getting anywhere (another player, a bomb that just appeared…): think again
+  if (Math.abs(p.x - mem.lx) + Math.abs(p.y - mem.ly) < 0.002) { mem.stuck += dt; if (mem.stuck > 0.4) { mem.stuck = 0; mem.path = []; mem.t = 0; } }
+  else mem.stuck = 0;
+  mem.lx = p.x; mem.ly = p.y;
+}
+
+function botThink(p, dt) {
+  const lv = botLevel(p);
+  let mem = S.bots[p.slot];
+  if (!mem) { // keep the button counters of the input object the player already has, so nothing fires by itself
+    const old = inputs[p.slot] || {};
+    mem = S.bots[p.slot] = { t: 0, path: [], stuck: 0, lx: p.x, ly: p.y, teleDir: null,
+      in: { bombSeq: old.bombSeq || 0, teleSeq: old.teleSeq || 0, detSeq: old.detSeq || 0, pri: 'h' } };
+  }
+  mem.t -= dt;
+  if (mem.t <= 0) { mem.t = lv.react * (0.7 + Math.random() * 0.6); botPlan(p, lv, mem); }
+  botSteer(p, mem, dt);
+  inputs[p.slot] = mem.in;
 }
 
 // ================== INPUT ==================
@@ -714,12 +1117,18 @@ function findKey(code) {
   for (const set of ['a', 'b']) for (const act in KEYMAP[set]) if (KEYMAP[set][act].includes(code)) return { set, act };
   return null;
 }
-function slotForSet(set) { return mode === 'local' ? (set === 'a' ? 0 : 1) : 0; }
+let localHumans = 1;          // offline: 1 (vs bots, both key columns move you) or 2 (same keyboard)
+let lobbyBots = [];           // [{ level: 'easy' | 'normal' | 'hard' }] waiting in the lobby
+const splitKeys = () => mode === 'local' && localHumans === 2;
+function slotForSet(set) { return splitKeys() ? (set === 'a' ? 0 : 1) : 0; }
+// is this slot a human playing on this screen?
+function onThisScreen(slot) { return mode === 'local' ? slot < localHumans : slot === mySlot; }
 function dirState(li) {
-  const sets = mode === 'local' ? [li === 0 ? 'a' : 'b'] : ['a', 'b'];
+  const sets = splitKeys() ? [li === 0 ? 'a' : 'b'] : ['a', 'b'];
   const any = act => sets.some(s => KEYMAP[s][act].some(c => keys.has(c)));
   const st = localIn[li];
-  st.up = any('up'); st.down = any('down'); st.left = any('left'); st.right = any('right');
+  const t = li === 0 ? touchDir : {};
+  st.up = any('up') || !!t.up; st.down = any('down') || !!t.down; st.left = any('left') || !!t.left; st.right = any('right') || !!t.right;
   return st;
 }
 function sendGuestInput() {
@@ -779,12 +1188,13 @@ $('#btnKeysReset').onclick = () => {
 };
 
 let muted = false;
+try { muted = localStorage.getItem('bg-mute') === '1'; } catch (e) { }
 addEventListener('keydown', e => {
   unlockAudio();
   if (e.target.tagName === 'INPUT') { if (e.code === 'Enter') { if (e.target.id === 'code') $('#btnJoin').click(); } return; }
   if (!started) return;
   if (e.code === 'Tab') { e.preventDefault(); boardHeld = true; return; }
-  if (e.code === 'KeyM' && !e.repeat) { muted = !muted; return; }
+  if (e.code === 'KeyM' && !e.repeat) { toggleMute(); return; }
   if (e.code === 'KeyR' && !e.repeat && view && view.ph === 'match' && mode !== 'guest') { startMatch(); return; }
   const k = findKey(e.code); if (!k) return;
   e.preventDefault();
@@ -798,11 +1208,68 @@ addEventListener('keydown', e => {
   sendGuestInput();
 });
 addEventListener('keyup', e => { if (e.code === 'Tab') boardHeld = false; keys.delete(e.code); sendGuestInput(); });
-addEventListener('blur', () => { keys.clear(); sendGuestInput(); });
+addEventListener('blur', () => { keys.clear(); boardHeld = false; clearTouch(); sendGuestInput(); });
 
 function readLocalInputs() {
-  if (mode === 'local') { inputs[0] = dirState(0); inputs[1] = dirState(1); }
+  if (mode === 'local') { for (let i = 0; i < localHumans; i++) inputs[i] = dirState(i); }
   else if (mode === 'host') inputs[0] = dirState(0);
+}
+
+// ---- touch controls (always player 1 of this screen) ----
+const touchDir = { up: false, down: false, left: false, right: false };
+const STICK_R = 60, DEAD = 0.35;
+// dx, dy: stick offset as a fraction of its radius (−1…1). 4-way: the bigger axis wins.
+function setTouchStick(dx, dy) {
+  touchDir.up = touchDir.down = touchDir.left = touchDir.right = false;
+  if (Math.hypot(dx, dy) >= DEAD) {
+    if (Math.abs(dx) >= Math.abs(dy)) { touchDir[dx < 0 ? 'left' : 'right'] = true; localIn[0].pri = 'h'; }
+    else { touchDir[dy < 0 ? 'up' : 'down'] = true; localIn[0].pri = 'v'; }
+  }
+  sendGuestInput();
+}
+function touchPress(act) { localIn[0][act + 'Seq']++; sendGuestInput(); }
+function clearTouch() { touchDir.up = touchDir.down = touchDir.left = touchDir.right = false; stickId = null; const b = $('#stickBase'); if (b) b.style.display = 'none'; }
+let stickId = null, stickO = null;
+function enableTouch() { document.body.classList.add('touch'); }
+try { if (matchMedia('(pointer: coarse)').matches) enableTouch(); } catch (e) { }
+addEventListener('touchstart', enableTouch, { passive: true });
+try { matchMedia('(orientation: portrait)').addEventListener('change', () => { clearTouch(); boardHeld = false; sendGuestInput(); }); } catch (e) { }
+{
+  const zone = $('#stickZone'), base = $('#stickBase'), knob = $('#stickKnob');
+  const move = e => {
+    let dx = (e.clientX - stickO.x) / STICK_R, dy = (e.clientY - stickO.y) / STICK_R;
+    const m = Math.hypot(dx, dy); if (m > 1) { dx /= m; dy /= m; }
+    knob.style.transform = `translate(${dx * STICK_R * 0.6}px,${dy * STICK_R * 0.6}px)`;
+    setTouchStick(dx, dy);
+  };
+  zone.addEventListener('pointerdown', e => {
+    e.preventDefault(); unlockAudio();
+    stickId = e.pointerId; stickO = { x: e.clientX, y: e.clientY };
+    try { zone.setPointerCapture(e.pointerId); } catch (err) { }
+    base.style.left = e.clientX + 'px'; base.style.top = e.clientY - zone.getBoundingClientRect().top + 'px'; base.style.display = 'block';
+    knob.style.transform = '';
+  });
+  zone.addEventListener('pointermove', e => { if (e.pointerId === stickId) { e.preventDefault(); move(e); } });
+  const end = e => { if (e.pointerId === stickId) { clearTouch(); sendGuestInput(); } };
+  zone.addEventListener('pointerup', end); zone.addEventListener('pointercancel', end);
+  for (const [id, act] of [['#tBomb', 'bomb'], ['#tTele', 'tele'], ['#tDet', 'det']]) {
+    const b = $(id);
+    b.addEventListener('pointerdown', e => { e.preventDefault(); unlockAudio(); b.classList.add('down'); touchPress(act); });
+    for (const t of ['pointerup', 'pointercancel', 'pointerleave']) b.addEventListener(t, () => b.classList.remove('down'));
+  }
+  const sc = $('#tScores');
+  sc.addEventListener('pointerdown', e => { e.preventDefault(); boardHeld = true; });
+  for (const t of ['pointerup', 'pointercancel', 'pointerleave']) sc.addEventListener(t, () => { boardHeld = false; });
+  $('#tSound').onclick = () => { unlockAudio(); toggleMute(); };
+  $('#tRematch').onclick = () => { if (view && view.ph === 'match' && mode !== 'guest') startMatch(); };
+  $('#tQuit').onclick = () => { if (confirm('Quit to the main menu?')) toMenu(''); };
+}
+let tbarKey = '';
+function updateTouchBar(v) {
+  const k = (muted ? 1 : 0) + ':' + (v.ph === 'match' && mode !== 'guest' ? 1 : 0);
+  if (k === tbarKey) return; tbarKey = k;
+  $('#tSound').textContent = muted ? 'SOUND OFF' : 'SOUND ON'; $('#tSound').classList.toggle('on', !muted);
+  $('#tRematch').classList.toggle('hidden', !(v.ph === 'match' && mode !== 'guest'));
 }
 
 // ================== AUDIO ==================
@@ -835,12 +1302,12 @@ function sfx(name) {
   else if (name === 'tele') { tone('sine', 300, 1400, 0.22, 0.15); tone('triangle', 1400, 300, 0.2, 0.08, 0.12); }
   else if (name === 'portal') { tone('sine', 700, 180, 0.18, 0.12); tone('sine', 180, 900, 0.2, 0.1, 0.15); }
   else if (name === 'throw') tone('triangle', 320, 760, 0.18, 0.12);
-  else if (name === 'freeze') { tone('sine', 1800, 900, 0.3, 0.1); tone('sine', 2400, 1200, 0.3, 0.06, 0.08); }
   else if (name === 'thud') tone('sine', 110, 50, 0.15, 0.25);
   else if (name === 'det') { tone('square', 900, 900, 0.05, 0.1); tone('square', 1200, 1200, 0.05, 0.1, 0.07); }
   else if (name === 'hurt') tone('sawtooth', 380, 140, 0.25, 0.14);
   else if (name === 'curse') { tone('sawtooth', 220, 110, 0.25, 0.14); tone('sawtooth', 165, 82, 0.3, 0.14, 0.2); }
 }
+function toggleMute() { muted = !muted; try { localStorage.setItem('bg-mute', muted ? '1' : '0'); } catch (e) { } }
 function playEvents(list) { new Set(list).forEach(sfx); }
 
 // ================== RENDERING ==================
@@ -880,7 +1347,7 @@ function drawPU(i, type) {
   const glow = 0.5 + 0.5 * Math.sin(clock * 6);
   ctx.fillStyle = { b: '#334155', f: '#7c2d12', s: '#1e3a8a', k: '#3f2a1d', t: '#4c1d95', g: '#134e4a',
     r: '#164e63', p: '#7f1d1d', u: '#78350f', v: '#0c4a6e', h: '#881337', w: '#365314', l: '#3f3f46', m: '#713f12', x: '#2e1065', d: '#450a0a', n: '#450a0a', e: '#450a0a',
-    o: '#701a75', j: '#1f2937', z: '#155e75', y: '#854d0e', i: '#374151' }[type];
+    o: '#701a75', j: '#1f2937', y: '#854d0e', i: '#374151' }[type];
   ctx.strokeStyle = `rgba(250,204,21,${0.5 + glow * 0.5})`; ctx.lineWidth = 3;
   ctx.beginPath(); ctx.roundRect(px + 6, py + 6, T - 12, T - 12, 7); ctx.fill(); ctx.stroke();
   if (type === 'b') {
@@ -912,13 +1379,6 @@ function drawPU(i, type) {
     ctx.fillStyle = '#6b7280'; ctx.beginPath(); ctx.ellipse(cx, cy + 3, 13, 7, 0, 0, 7); ctx.fill();
     ctx.fillStyle = '#374151'; ctx.beginPath(); ctx.ellipse(cx, cy, 10, 5, 0, 0, 7); ctx.fill();
     ctx.fillStyle = Math.sin(clock * 8) > 0 ? '#ef4444' : '#7f1d1d'; ctx.beginPath(); ctx.arc(cx, cy - 1, 3, 0, 7); ctx.fill();
-  } else if (type === 'z') { // freeze: snowflake
-    ctx.strokeStyle = '#e0f2fe'; ctx.lineWidth = 2.5; ctx.lineCap = 'round';
-    for (let k = 0; k < 3; k++) {
-      const a = k * Math.PI / 3 + clock * 0.8, ax = Math.cos(a) * 12, ay = Math.sin(a) * 12;
-      ctx.beginPath(); ctx.moveTo(cx - ax, cy - ay); ctx.lineTo(cx + ax, cy + ay); ctx.stroke();
-    }
-    ctx.lineCap = 'butt'; ctx.fillStyle = '#7dd3fc'; ctx.beginPath(); ctx.arc(cx, cy, 3, 0, 7); ctx.fill();
   } else if (type === 'y') { // star bomb
     ctx.fillStyle = '#fde047'; ctx.strokeStyle = '#000'; ctx.lineWidth = 1.5; ctx.beginPath();
     for (let k = 0; k < 10; k++) { const a = -Math.PI / 2 + k * Math.PI / 5, r = k % 2 ? 6 : 14; ctx.lineTo(cx + Math.cos(a) * r, cy + 1 + Math.sin(a) * r); }
@@ -1127,7 +1587,7 @@ function render(v, dt) {
   for (const [i, t] of v.pu) drawPU(i, t);
   for (const [i, k, t] of v.f) drawFlame(i, k, t);
   for (const [x, y, f, fl, z, own] of v.b) {
-    if (fl & 8) { if (mode === 'local' || own === mySlot) drawMine(x, y, true); continue; } // mines are hidden from opponents
+    if (fl & 8) { if (onThisScreen(own)) drawMine(x, y, true); continue; } // mines are hidden from opponents
     drawBomb(x, y, f, fl, z || 0);
   }
   for (const [x, y, t, c] of (v.fx || [])) {
@@ -1145,36 +1605,30 @@ function render(v, dt) {
     else { const k = 1 - Math.exp(-dt * 25); d.x += (p[0] - d.x) * k; d.y += (p[1] - d.y) * k; }
   });
   order.sort((a, b) => disp[a].y - disp[b].y);
-  const multi = mode !== 'local';
+  const multi = !splitKeys();
   for (const i of order) {
     const p = v.p[i];
     const rt = v.rt || roundTime;
-    const args = [i, disp[i].x, disp[i].y, p[2], p[3], p[4], p[5], i === mySlot, multi && i === mySlot && (v.ph === 'count' || (v.ph === 'play' && v.tm > rt - 2)), p[10], p[15], p[16], (p[12] & 4) ? (p[22] || 1) : 0];
-    if (p[2] && p[19] > 0) { // invisible: faint to yourself (or on a shared screen), almost nothing to opponents
-      const a = (mode === 'local' || i === mySlot) ? 0.35 : 0.05;
+    const args = [i, disp[i].x, disp[i].y, p[2], p[3], p[4], p[5], i === mySlot, multi && i === mySlot && (v.ph === 'count' || (v.ph === 'play' && v.tm > rt - 2)), p[10], p[15], p[16], (p[12] & 4) ? (p[21] || 1) : 0];
+    if (p[2] && p[18] > 0) { // invisible: faint to yourself (or on a shared screen), almost nothing to opponents
+      const a = onThisScreen(i) ? 0.35 : 0.05;
       const cx = disp[i].x * T + T / 2, cy = disp[i].y * T + T / 2;
       offCtx.setTransform(1, 0, 0, 1, 0, 0); offCtx.clearRect(0, 0, 112, 112);
       offCtx.setTransform(1, 0, 0, 1, 56 - cx, 60 - cy);
       ctx = offCtx; drawPlayer(...args); ctx = mainCtx;
       ctx.globalAlpha = a; ctx.drawImage(off, cx - 56, cy - 60); ctx.globalAlpha = 1;
     } else drawPlayer(...args);
-    if (p[2] && p[18] > 0) { // frozen: ice block
-      const px = disp[i].x * T, py = disp[i].y * T;
-      ctx.fillStyle = 'rgba(125,211,252,.45)'; ctx.strokeStyle = 'rgba(224,242,254,.95)'; ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.roundRect(px + 3, py - 4, T - 6, T + 2, 6); ctx.fill(); ctx.stroke();
-      ctx.fillStyle = 'rgba(255,255,255,.7)'; ctx.fillRect(px + 9, py + 1, 4, 14); ctx.fillRect(px + 15, py + 1, 3, 7);
-    }
   }
   // overlays
   if (v.ph === 'count') bigText(String(Math.max(1, Math.ceil(v.ct))), '#ffb020');
   else if (v.ph === 'play' && v.tm > (v.rt || roundTime) - 0.7) bigText('GO!', '#a3e635');
   else if (v.ph === 'round') drawBoard(v, v.ban, 'Next round starting…');
   else if (mode === 'guest' && joinedLate && v.ph !== 'match') banner('YOU JOINED', 'You\'ll play from the next round — watch for now', '#38bdf8');
-  else if (v.ph === 'match') drawBoard(v, v.ban, mode === 'guest' ? 'Waiting for the host to start a rematch…' : 'Press R for a rematch');
+  else if (v.ph === 'match') drawBoard(v, v.ban, mode === 'guest' ? 'Waiting for the host to start a rematch…' : document.body.classList.contains('touch') ? 'Tap REMATCH to play again' : 'Press R for a rematch');
   if ((v.ph === 'play' || v.ph === 'grace') && v.tm <= 0 && v.tm > -2) banner('SUDDEN DEATH!', null, '#fb7185');
-  if (boardHeld && v.ph !== 'round' && v.ph !== 'match') drawBoard(v, 'SCOREBOARD', 'Release TAB to play');
+  if (boardHeld && v.ph !== 'round' && v.ph !== 'match') drawBoard(v, 'SCOREBOARD', document.body.classList.contains('touch') ? 'Let go of SCORES to play' : 'Release TAB to play');
   if (v.ph === 'match') recordMatch(v);
-  updateHUD(v);
+  updateHUD(v); updateTouchBar(v);
 }
 
 // ---- scoreboard ----
@@ -1184,6 +1638,7 @@ function boardRows(v) {
   const sc = v.sc || [];
   return v.names.map((n, i) => {
     const [k, d, sk, cr, it] = sc[i] || [0, 0, 0, 0, 0];
+    if (v.bt && v.bt[i]) n += ' · ' + (LEVEL_LABEL[v.bt[i]] || '');
     return { i, n, w: v.wins[i] || 0, k, d, sk, cr, it, con: !v.con || v.con[i] };
   }).sort((a, b) => b.w - a.w || b.k - a.k || a.d - b.d);
 }
@@ -1223,12 +1678,16 @@ function drawBoard(v, title, sub) {
 
 // all-time scoreboard: every browser records each finished match it saw (stored locally, keyed by player name)
 function loadAll() { try { return JSON.parse(localStorage.getItem('bg-alltime') || '{}') || {}; } catch (e) { return {}; } }
+let lastRecordedMid = null;
 function recordMatch(v) {
-  if (!v.mid || !v.sc) return;
+  if (!v.mid || !v.sc || v.mid === lastRecordedMid) return;
+  lastRecordedMid = v.mid;
   let seen = []; try { seen = JSON.parse(localStorage.getItem('bg-seen') || '[]'); } catch (e) { }
   if (seen.includes(v.mid)) return;
+  if (mode === 'local' && localHumans === 2) return; // same keyboard: names are just "Player 1/2"
   const all = loadAll(), top = Math.max(...v.wins);
   v.names.forEach((n, i) => {
+    if (v.bt && v.bt[i]) return; // bots don't go on the all-time board
     const key = n.trim().toUpperCase(), a = all[key] || (all[key] = { name: n, m: 0, mw: 0, r: 0, k: 0, d: 0 });
     const [k, d] = v.sc[i] || [0, 0];
     a.name = n; a.m++; if (v.wins[i] === top && top > 0) a.mw++; a.r += v.wins[i] || 0; a.k += k; a.d += d;
@@ -1245,13 +1704,13 @@ function renderAllTime() {
 let hudKey = '';
 function updateHUD(v) {
   const timer = v.tm > 0 ? `${Math.floor(Math.ceil(v.tm) / 60)}:${String(Math.ceil(v.tm) % 60).padStart(2, '0')}` : 'SD!';
-  const key = JSON.stringify([timer, v.names, v.wins, v.con, v.sc, v.p.map(p => [p[2], p[6], p[7], p[8], p[9], p[10], p[11], p[12], p[13], p[14], p[15] > 0 ? Math.ceil(p[15]) : 0, p[16], p[17], Math.ceil(p[18] || 0), Math.ceil(p[19] || 0), p[20], p[21], Math.ceil(p[22] || 0)])]);
+  const key = JSON.stringify([timer, v.names, v.wins, v.con, v.sc, v.p.map(p => [p[2], p[6], p[7], p[8], p[9], p[10], p[11], p[12], p[13], p[14], p[15] > 0 ? Math.ceil(p[15]) : 0, p[16], p[17], Math.ceil(p[18] || 0), p[19], p[20], Math.ceil(p[21] || 0)])]);
   if (key === hudKey) return; hudKey = key;
   const cards = v.names.map((n, i) => {
     const p = v.p[i];
-    const stars = '★'.repeat(v.wins[i]) + '☆'.repeat(Math.max(0, WIN_TARGET - v.wins[i]));
-    return `<div class="card ${p[2] ? '' : 'dead'}"><div class="nm"><span class="dot" style="background:${COLORS[i]}"></span>${esc(n)}${i === mySlot && mode !== 'local' ? ' (you)' : ''}${v.con[i] ? '' : ' ✖'}${v.sc && v.sc[i] ? `<span class="kc" title="kills / deaths">⚔${v.sc[i][0]}<span>/${v.sc[i][1]}</span></span>` : ''}</div>
-      <div class="wins">${stars}</div><div class="st"><span><i class="emo">💣</i>${p[6]}</span><span><i class="emo">🔥</i>${p[7]}</span><span><i class="emo">⚡</i>${p[8]}</span>${p[9] ? '<span><i class="emo">👢</i></span>' : ''}${p[10] ? '<span><i class="emo">👻</i></span>' : ''}${p[11] ? `<span><i class="emo">🌀</i>${p[11]}</span>` : ''}${p[12] & 1 ? '<span><i class="emo">📡</i></span>' : ''}${p[12] & 2 ? '<span><i class="emo">🎯</i></span>' : ''}${p[12] & 4 ? `<span><i class="emo">🧱</i>${Math.ceil(p[22] || 0)}</span>` : ''}${p[12] & 8 ? '<span><i class="emo">➖</i></span>' : ''}${p[13] ? `<span><i class="emo">💥</i>${p[13]}</span>` : ''}${p[14] > 1 ? `<span><i class="emo">❤️</i>${p[14]}</span>` : ''}${p[15] > 0 && p[15] > HIT_INV ? `<span><i class="emo">🛡️</i>${Math.ceil(p[15])}</span>` : ''}${p[16] ? `<span style="color:#fb7185"><i class="emo">💀</i>${CURSE_LABEL[p[16]] || ''} ${p[17]}</span>` : ''}${p[20] & 1 ? '<span><i class="emo">🧤</i></span>' : ''}${p[20] & 2 ? '<span><i class="emo">⭐</i></span>' : ''}${p[21] ? `<span><i class="emo">🧨</i>${p[21]}</span>` : ''}${p[18] > 0 ? `<span style="color:#7dd3fc"><i class="emo">❄️</i>${Math.ceil(p[18])}</span>` : ''}${p[19] > 0 ? `<span><i class="emo">👁️</i>${Math.ceil(p[19])}</span>` : ''}</div></div>`;
+    const stars = '★'.repeat(v.wins[i]) + '☆'.repeat(Math.max(0, (v.wt || WIN_TARGET) - v.wins[i]));
+    return `<div class="card ${p[2] ? '' : 'dead'}"><div class="nm"><span class="dot" style="background:${COLORS[i]}"></span>${esc(n)}${v.bt && v.bt[i] ? ' · ' + (LEVEL_LABEL[v.bt[i]] || '') : ''}${i === mySlot && mode !== 'local' ? ' (you)' : ''}${v.con[i] ? '' : ' ✖'}${v.sc && v.sc[i] ? `<span class="kc" title="kills / deaths">⚔${v.sc[i][0]}<span>/${v.sc[i][1]}</span></span>` : ''}</div>
+      <div class="wins">${stars}</div><div class="st"><span><i class="emo">💣</i>${p[6]}</span><span><i class="emo">🔥</i>${p[7]}</span><span><i class="emo">⚡</i>${p[8]}</span>${p[9] ? '<span><i class="emo">👢</i></span>' : ''}${p[10] ? '<span><i class="emo">👻</i></span>' : ''}${p[11] ? `<span><i class="emo">🌀</i>${p[11]}</span>` : ''}${p[12] & 1 ? '<span><i class="emo">📡</i></span>' : ''}${p[12] & 2 ? '<span><i class="emo">🎯</i></span>' : ''}${p[12] & 4 ? `<span><i class="emo">🧱</i>${Math.ceil(p[21] || 0)}</span>` : ''}${p[12] & 8 ? '<span><i class="emo">➖</i></span>' : ''}${p[13] ? `<span><i class="emo">💥</i>${p[13]}</span>` : ''}${p[14] > 1 ? `<span><i class="emo">❤️</i>${p[14]}</span>` : ''}${p[15] > 0 && p[15] > HIT_INV ? `<span><i class="emo">🛡️</i>${Math.ceil(p[15])}</span>` : ''}${p[16] ? `<span style="color:#fb7185"><i class="emo">💀</i>${CURSE_LABEL[p[16]] || ''} ${p[17]}</span>` : ''}${p[19] & 1 ? '<span><i class="emo">🧤</i></span>' : ''}${p[19] & 2 ? '<span><i class="emo">⭐</i></span>' : ''}${p[20] ? `<span><i class="emo">🧨</i>${p[20]}</span>` : ''}${p[18] > 0 ? `<span><i class="emo">👁️</i>${Math.ceil(p[18])}</span>` : ''}</div></div>`;
   });
   const half = Math.ceil(cards.length / 2);
   $('#hud').innerHTML = cards.slice(0, half).join('') + `<div class="timer ${v.tm <= 0 ? 'sd' : ''}">${timer}</div>` + cards.slice(half).join('');
@@ -1332,16 +1791,35 @@ function frame(now) {
 requestAnimationFrame(frame);
 
 // ================== SCREENS ==================
-function renderSizeSeg() { document.querySelectorAll('#sizeSeg button').forEach(b => b.classList.toggle('on', b.dataset.s === mapSize)); }
-document.querySelectorAll('#sizeSeg button').forEach(b => b.onclick = () => {
-  mapSize = b.dataset.s; renderSizeSeg();
-  try { localStorage.setItem('bg-size', mapSize); } catch (e) {}
-});
-renderSizeSeg();
-function applyMapSize() { const z = SIZES[mapSize]; setSize(z.w, z.h); roundTime = z.time; }
-setSize(SIZES[mapSize].w, SIZES[mapSize].h);
+function applySet(set) { const z = SIZES[set.size]; setSize(z.w, z.h); roundTime = roundTimeFor(set); }
+setSize(SIZES[SET.size].w, SIZES[SET.size].h);
 
-function show(id) { for (const s of ['menu', 'keys', 'pups', 'scores', 'lobby', 'game']) $('#' + s).classList.toggle('hidden', s !== id); }
+// ---- settings box: editable for the host / offline, read-only for guests ----
+const SEGS = { sizeSeg: 'size', winsSeg: 'wins', timeSeg: 'time', crateSeg: 'crates' };
+function renderSet(set, editable) {
+  for (const [id, key] of Object.entries(SEGS)) document.querySelectorAll('#' + id + ' button').forEach(b => {
+    b.classList.toggle('on', String(set[key]) === b.dataset.v); b.disabled = !editable;
+  });
+  $('#puGrid').innerHTML = PU_ALL.map(t => `<button data-t="${t}" title="${PU_NAME[t]}" class="${set.off.includes(t) ? 'off' : ''}"${editable ? '' : ' disabled'}><i class="emo">${PU_ICON[t]}</i></button>`).join('');
+  $('#puLabel').textContent = editable ? 'POWER-UPS — CLICK TO TURN ONE OFF' : 'POWER-UPS';
+}
+function changeSet(key, val) {
+  if (mode === 'guest') return;
+  SET = cleanSet(Object.assign({}, SET, { [key]: val })); saveSet(); renderLobby();
+}
+for (const [id, key] of Object.entries(SEGS)) document.querySelectorAll('#' + id + ' button').forEach(b => b.onclick = () => changeSet(key, b.dataset.v));
+$('#puGrid').onclick = e => {
+  const b = e.target.closest && e.target.closest('button'); if (!b || b.disabled) return;
+  const t = b.dataset.t;
+  changeSet('off', SET.off.includes(t) ? SET.off.filter(x => x !== t) : SET.off.concat(t));
+};
+
+const VIEWPORT = 'width=device-width,initial-scale=1,viewport-fit=cover';
+function show(id) {
+  document.body.classList.toggle('ingame', id === 'game');
+  const vp = document.querySelector('meta[name="viewport"]'); // pinch-zoom only locked while playing
+  if (vp) vp.setAttribute('content', id === 'game' ? VIEWPORT + ',maximum-scale=1,user-scalable=no' : VIEWPORT);
+  if (id !== 'game') clearTouch(); for (const s of ['menu', 'keys', 'pups', 'scores', 'lobby', 'game']) $('#' + s).classList.toggle('hidden', s !== id); }
 function getName() {
   const n = ($('#name').value.trim() || 'Player').slice(0, 12);
   myName = n; try { localStorage.setItem('bg-name', n); } catch (e) { }
@@ -1364,16 +1842,18 @@ function enterGame() {
   show('game'); started = true; hudKey = ''; disp.length = 0; acc = 0; lastT = performance.now();
   const mv = s => ['up', 'left', 'down', 'right'].map(a => firstKey(s, a)).join('');
   const line = s => `${mv(s)} · ${firstKey(s, 'bomb')} bomb · ${firstKey(s, 'tele')} teleport · ${firstKey(s, 'det')} detonate`;
-  $('#controls').textContent = mode === 'local' ? `P1: ${line('a')}   |   P2: ${line('b')}` : `${line('a')}   |   ${line('b')}`;
+  $('#controls').textContent = splitKeys() ? `P1: ${line('a')}   |   P2: ${line('b')}` : `${line('a')}   |   ${line('b')}`;
 }
 
 // ---- Local ----
-$('#btnLocal').onclick = () => {
-  unlockAudio(); resetAll(); mode = 'local'; mySlot = 0;
-  const n = getName();
-  M = { players: [newPl(n === 'Player' ? 'Player 1' : n), newPl('Player 2')], target: WIN_TARGET, id: matchId() };
-  inputs = []; readLocalInputs(); applyMapSize(); newRound(); enterGame();
-};
+function openOfflineLobby(humans) {
+  unlockAudio(); resetAll(); mode = 'local'; mySlot = 0; getName();
+  localHumans = humans; lobbyBots = humans === 1 ? [{ level: 'normal' }] : [];
+  show('lobby'); lobbyStatus(''); menuStatus('');
+  renderLobby();
+}
+$('#btnLocal').onclick = () => openOfflineLobby(2);
+$('#btnBots').onclick = () => openOfflineLobby(1);
 
 // ---- Host ----
 function genCode() { const a = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; let s = ''; for (let i = 0; i < 5; i++) s += a[Math.random() * a.length | 0]; return s; }
@@ -1388,8 +1868,8 @@ function peerErrorText(err) {
 $('#btnHost').onclick = () => {
   unlockAudio();
   if (typeof Peer === 'undefined') { menuStatus('Online library failed to load — check your internet connection.'); return; }
-  resetAll(); mode = 'host'; mySlot = 0; getName();
-  show('lobby'); $('#hostBox').classList.remove('hidden'); $('#btnStart').classList.remove('hidden');
+  resetAll(); mode = 'host'; mySlot = 0; getName(); lobbyBots = [];
+  show('lobby');
   $('#roomCode').textContent = '·····'; lobbyStatus('Creating room…');
   startHostPeer();
   renderLobby();
@@ -1406,7 +1886,7 @@ function startHostPeer(tries = 0) {
     const entry = { conn, name: 'Guest', slot: -1, open: false, inQ: 0, ping: 0 };
     const reject = why => { conn.send({ t: 'reject', why }); setTimeout(() => conn.close(), 300); };
     conn.on('open', () => {
-      if (!started && conns.filter(c => c.open).length >= MAX_PLAYERS - 1) { reject('Room is full.'); return; }
+      if (!started && !makeRoomForGuest()) { reject('Room is full.'); return; }
       entry.open = true; conns.push(entry);
       if (!started) renderLobby(); // mid-game joiners are placed once their name arrives (hello)
     });
@@ -1460,27 +1940,79 @@ function dropConn(entry) {
   if (!started) renderLobby();
 }
 function broadcast(msg) { for (const c of conns) if (c.open && c.conn.open) { try { c.conn.send(msg); } catch (e) { } } }
-function lobbyPlayers() { return [{ name: myName }].concat(conns.filter(c => c.open).map(c => ({ name: c.name }))); }
-function renderLobby(list) {
-  list = list || lobbyPlayers();
-  $('#plist').innerHTML = list.map((p, i) => `<li><span class="dot" style="background:${COLORS[i]}"></span>${esc(p.name)}${i === 0 ? ' (host)' : ''}</li>`).join('')
-    + (list.length < 2 ? '<li style="color:var(--dim)">Waiting for players…</li>' : '');
-  if (mode === 'host') {
-    $('#btnStart').disabled = list.length < 2;
-    broadcast({ t: 'lobby', players: list.map(p => p.name), size: SIZES[mapSize].label });
-    $('#lobbyMap').textContent = 'MAP: ' + SIZES[mapSize].label;
-  }
+const LEVEL_LABEL = { easy: 'EASY', normal: 'NORMAL', hard: 'HARD' };
+const botName = j => 'BOT ' + (j + 1);
+function localName(i) { return localHumans === 1 ? myName : i === 0 ? (myName === 'Player' ? 'Player 1' : myName) : 'Player 2'; }
+// who is in the lobby, in slot order
+function lobbyList() {
+  const bots = lobbyBots.map((b, j) => ({ name: botName(j), kind: 'bot', level: b.level }));
+  if (mode === 'local') return Array.from({ length: localHumans }, (_, i) => ({ name: localName(i), kind: 'local' })).concat(bots);
+  return [{ name: myName, kind: 'host' }].concat(conns.filter(c => c.open).map(c => ({ name: c.name, kind: 'guest' })), bots);
 }
+// guests pass the host's list + settings; the host / offline render their own
+function renderLobby(list, set) {
+  const own = !list; list = list || lobbyList(); set = set || SET;
+  const edit = own && mode !== 'guest';
+  $('#lobbyTitle').textContent = mode === 'local' ? 'MATCH SETUP' : 'LOBBY';
+  $('#hostBox').classList.toggle('hidden', mode !== 'host');
+  $('#btnStart').classList.toggle('hidden', !edit);
+  $('#addRow').classList.toggle('hidden', !edit);
+  $('#btnP2').classList.toggle('hidden', mode !== 'local');
+  $('#btnP2').innerHTML = localHumans === 2 ? '✖ PLAYER 2' : '+ PLAYER 2';
+  $('#btnAddBot').disabled = list.length >= MAX_PLAYERS;
+  $('#btnP2').disabled = localHumans === 1 && list.length >= MAX_PLAYERS;
+  $('#plist').innerHTML = list.map((p, i) => {
+    const tag = p.kind === 'host' ? ' (host)' : p.kind === 'local' && localHumans === 2 ? ` (${i === 0 ? 'left keys' : 'right keys'})` : '';
+    if (p.kind !== 'bot') return `<li><span class="dot" style="background:${COLORS[i]}"></span>${esc(p.name)}${tag}</li>`;
+    const j = i - (list.length - list.filter(q => q.kind === 'bot').length);
+    return `<li class="bot" data-bot="${j}" title="${edit ? 'Click to change difficulty' : ''}"><span class="dot" style="background:${COLORS[i]}"></span><i class="emo">🤖</i> ${esc(p.name)}<span class="lv">${LEVEL_LABEL[p.level] || ''}</span>${edit ? `<button class="x" data-del="${j}" title="Remove bot">✖</button>` : ''}</li>`;
+  }).join('') + (list.length < 2 ? '<li style="color:var(--dim)">Waiting for players…</li>' : '');
+  renderSet(set, edit);
+  $('#lobbyHint').textContent = mode === 'local'
+    ? (localHumans === 2 ? 'Same keyboard: left column of CONTROLS is player 1, right column is player 2.' : 'Both key columns of CONTROLS move you.')
+    : 'Your colleague opens this same HTML file, types the code and presses JOIN.';
+  if (edit) $('#btnStart').disabled = list.length < 2;
+  if (mode === 'host') broadcast({ t: 'lobby', players: list.map(p => ({ name: p.name, bot: p.level })), set: SET });
+}
+function addBot() { if (mode !== 'guest' && lobbyList().length < MAX_PLAYERS) { lobbyBots.push({ level: 'normal' }); renderLobby(); } }
+function cycleBot(j) { const b = lobbyBots[j]; if (b && mode !== 'guest') { b.level = BOT_CYCLE[b.level] || 'normal'; renderLobby(); } }
+function removeBot(j) { if (mode !== 'guest' && lobbyBots[j]) { lobbyBots.splice(j, 1); renderLobby(); } }
+// a guest is joining the lobby: drop the last bot if that's what it takes to make room
+function makeRoomForGuest() {
+  const humans = 1 + conns.filter(c => c.open).length;
+  if (humans + lobbyBots.length < MAX_PLAYERS) return true;
+  if (!lobbyBots.length) return false;
+  lobbyBots.pop(); return true;
+}
+$('#btnAddBot').onclick = addBot;
+$('#plist').onclick = e => {
+  const t = e.target, del = t.closest && t.closest('[data-del]');
+  if (del) { e.stopPropagation(); removeBot(+del.dataset.del); return; }
+  const li = t.closest && t.closest('[data-bot]');
+  if (li) cycleBot(+li.dataset.bot);
+};
+$('#btnP2').onclick = () => {
+  if (mode !== 'local') return;
+  localHumans = localHumans === 2 ? 1 : 2;
+  if (localHumans + lobbyBots.length > MAX_PLAYERS) lobbyBots.pop();
+  renderLobby();
+};
+// Slots: offline → humans then bots; online → host, guests, bots. Also used for rematches (R).
 function startMatch() {
-  if (mode === 'local') { M.players = M.players.map(p => newPl(p.name)); M.id = matchId(); newRound(); return; }
-  const open = conns.filter(c => c.open);
-  if (open.length < 1) { // everyone left: back to lobby
-    started = false; show('lobby'); renderLobby(); lobbyStatus('Your colleague left. Waiting for players…'); return;
+  const set = cleanSet(SET), bots = lobbyBots.map((b, j) => newPl(botName(j), null, b.level));
+  if (mode === 'local') {
+    M = { players: Array.from({ length: localHumans }, (_, i) => newPl(localName(i))).concat(bots), target: set.wins, set, id: matchId() };
+  } else {
+    // mid-session, a guest still between "connected" and "hello" has no slot yet: hello will hot-join (or reject) them
+    const open = conns.filter(c => c.open && (!started || c.slot >= 0));
+    if (open.length < 1 && !bots.length) { // everyone left: back to lobby
+      started = false; show('lobby'); renderLobby(); lobbyStatus('Your colleague left. Waiting for players…'); return;
+    }
+    open.forEach((c, i) => c.slot = i + 1);
+    M = { players: [newPl(myName)].concat(open.map(c => newPl(c.name)), bots), target: set.wins, set, id: matchId() };
+    open.forEach(c => c.conn.send({ t: 'start', slot: c.slot }));
   }
-  open.forEach((c, i) => c.slot = i + 1);
-  M = { players: [newPl(myName)].concat(open.map(c => newPl(c.name))), target: WIN_TARGET, id: matchId() };
-  inputs = []; readLocalInputs(); applyMapSize();
-  open.forEach(c => c.conn.send({ t: 'start', slot: c.slot }));
+  inputs = []; readLocalInputs(); applySet(set);
   newRound(); enterGame();
 }
 $('#btnStart').onclick = () => { unlockAudio(); startMatch(); };
@@ -1507,7 +2039,7 @@ $('#btnJoin').onclick = () => {
     hostConn.on('open', () => {
       clearTimeout(timeout);
       hostConn.send({ t: 'hello', name: myName });
-      show('lobby'); $('#hostBox').classList.add('hidden'); $('#btnStart').classList.add('hidden');
+      show('lobby'); renderLobby([{ name: '…', kind: 'host' }, { name: myName, kind: 'guest' }]);
       lobbyStatus(''); menuStatus('');
     });
     hostConn.on('data', d => {
@@ -1516,7 +2048,11 @@ $('#btnJoin').onclick = () => {
       if (d.t === 'pong') { const r = performance.now() - d.c; myPing = myPing ? myPing * 0.6 + r * 0.4 : r; return; }
       if (d.t === 'reject') toMenu(d.why);
       else if (d.t === 'bye') toMenu('The host closed the game.');
-      else if (d.t === 'lobby') { renderLobby(d.players.map(n => ({ name: n }))); $('#lobbyMap').textContent = d.size ? 'MAP: ' + d.size : ''; lobbyStatus('Waiting for the host to start…'); }
+      else if (d.t === 'lobby') {
+        const list = (d.players || []).map((p, i) => typeof p === 'string' ? { name: p, kind: i ? 'guest' : 'host' }
+          : { name: String(p.name), kind: p.bot ? 'bot' : i ? 'guest' : 'host', level: p.bot });
+        renderLobby(list, cleanSet(d.set)); lobbyStatus('Waiting for the host to start…');
+      }
       else if (d.t === 'start') { mySlot = d.slot; joinedLate = !!d.late; localIn[0].bombSeq = 0; localIn[0].teleSeq = 0; localIn[0].detSeq = 0; lastSent = ''; lastSnapQ = -1; lastSnapAt = performance.now(); view = null; enterGame(); sendGuestInput(); }
       else if (d.t === 's') {
         if (d.ev) playEvents(d.ev);
