@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <title>Blast Grid</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
@@ -921,9 +921,10 @@ function canEscape(p, lv, from, t0, extra) {
 function canEscapeAfterBomb(p, lv = botLevel(p), at = tileOf(p), t0 = 0) {
   return canEscape(p, lv, at, t0, virtualBombs(p, at, t0));
 }
+// enemy mines are invisible to the bot: it can still pick that tile (placing fails there, just like for a human)
+const knownBombAt = (p, i) => S.bombs.some(b => !b.dead && idx(b.x, b.y) === i && (!b.mine || b.owner === p.slot));
 function canPlaceAt(p, i) {
-  return p.curse !== 'nobomb' && p.bombsOut < p.maxBombs && S.grid[i] === '.' && !S.portalAt.has(i)
-    && !S.bombs.some(b => !b.dead && idx(b.x, b.y) === i);
+  return p.curse !== 'nobomb' && p.bombsOut < p.maxBombs && S.grid[i] === '.' && !S.portalAt.has(i) && !knownBombAt(p, i);
 }
 
 // What a bomb at tile i would achieve: new crates broken, foes caught (by tile)
@@ -959,7 +960,7 @@ function botPlan(p, lv, mem) {
   const foes = visibleFoes(p), hunting = Math.random() < lv.hunt;
 
   // 3. mines: lay them where we stand (the button lays a mine while we have any)
-  if (p.mines > 0 && p.curse !== 'nobomb' && S.grid[start] === '.' && !S.portalAt.has(start) && !S.bombs.some(b => !b.dead && idx(b.x, b.y) === start)) { mem.in.bombSeq++; return; }
+  if (p.mines > 0 && p.curse !== 'nobomb' && S.grid[start] === '.' && !S.portalAt.has(start) && !knownBombAt(p, start)) { mem.in.bombSeq++; return; }
 
   // 4. a bomb right here would do something useful, and there's a way out
   if (canPlaceAt(p, start)) {
@@ -1813,8 +1814,11 @@ $('#puGrid').onclick = e => {
   changeSet('off', SET.off.includes(t) ? SET.off.filter(x => x !== t) : SET.off.concat(t));
 };
 
+const VIEWPORT = 'width=device-width,initial-scale=1,viewport-fit=cover';
 function show(id) {
   document.body.classList.toggle('ingame', id === 'game');
+  const vp = document.querySelector('meta[name="viewport"]'); // pinch-zoom only locked while playing
+  if (vp) vp.setAttribute('content', id === 'game' ? VIEWPORT + ',maximum-scale=1,user-scalable=no' : VIEWPORT);
   if (id !== 'game') clearTouch(); for (const s of ['menu', 'keys', 'pups', 'scores', 'lobby', 'game']) $('#' + s).classList.toggle('hidden', s !== id); }
 function getName() {
   const n = ($('#name').value.trim() || 'Player').slice(0, 12);
@@ -1999,7 +2003,8 @@ function startMatch() {
   if (mode === 'local') {
     M = { players: Array.from({ length: localHumans }, (_, i) => newPl(localName(i))).concat(bots), target: set.wins, set, id: matchId() };
   } else {
-    const open = conns.filter(c => c.open);
+    // mid-session, a guest still between "connected" and "hello" has no slot yet: hello will hot-join (or reject) them
+    const open = conns.filter(c => c.open && (!started || c.slot >= 0));
     if (open.length < 1 && !bots.length) { // everyone left: back to lobby
       started = false; show('lobby'); renderLobby(); lobbyStatus('Your colleague left. Waiting for players…'); return;
     }

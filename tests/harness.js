@@ -34,6 +34,7 @@ function element(tag = 'div') {
     getBoundingClientRect: () => ({ left: 0, top: 0, width: 100, height: 100, right: 100, bottom: 100 }),
     getContext: () => ctx2d(), querySelector: () => element(), querySelectorAll: () => [],
     click() { if (typeof this.onclick === 'function') this.onclick({}); },
+    attrs: {}, setAttribute(k, v) { this.attrs[k] = String(v); }, getAttribute(k) { return k in this.attrs ? this.attrs[k] : null; },
   };
   return el;
 }
@@ -57,7 +58,7 @@ function loadGame(opts = {}) {
     __listeners: listeners,
     __els: els,
     document: {
-      querySelector: s => (s.startsWith('#') ? byId(s.slice(1)) : element()),
+      querySelector: s => byId(s.startsWith('#') ? s.slice(1) : 'sel:' + s), // same stub element per selector
       getElementById: byId,
       querySelectorAll: () => [],
       createElement: t => element(t),
