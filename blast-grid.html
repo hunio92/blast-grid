@@ -1601,8 +1601,7 @@ function render(v, dt) {
   const order = v.p.map((p, i) => i);
   v.p.forEach((p, i) => {
     let d = disp[i];
-    if (mode !== 'guest' || !d || Math.abs(d.x - p[0]) + Math.abs(d.y - p[1]) > 1.5) disp[i] = d = { x: p[0], y: p[1] };
-    else { const k = 1 - Math.exp(-dt * 25); d.x += (p[0] - d.x) * k; d.y += (p[1] - d.y) * k; }
+    disp[i] = d = { x: p[0], y: p[1] }; // guests get positions that are already predicted / interpolated
   });
   order.sort((a, b) => disp[a].y - disp[b].y);
   const multi = !splitKeys();
@@ -1718,16 +1717,20 @@ function updateHUD(v) {
 function esc(s) { return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 
 // ================== MAIN LOOP ==================
-let lastT = performance.now(), acc = 0, sendTick = 0;
+let lastT = performance.now(), acc = 0, hostTicks = 0;
 function simStep() {
   const now = performance.now(), dt = Math.min(0.25, (now - lastT) / 1000); lastT = now;
   if ((mode === 'local' || mode === 'host') && started && S) {
     readLocalInputs();
     acc += dt;
-    while (acc >= 1 / 60) { tick(1 / 60); acc -= 1 / 60; }
+    while (acc >= 1 / 60) {
+      tick(1 / 60); acc -= 1 / 60;
+      // one snapshot every 2 game ticks, so snapshot q is always at game time q × 33.3 ms (guests time playback by it;
+      // timers in browsers fire every 16 ms, not 16.67, so counting timer calls would drift)
+      if (mode === 'host' && ++hostTicks % 2 === 0) broadcast({ ...snapshot(), ev: netEv.splice(0), q: netSeq++ });
+    }
     view = snapshot();
     playEvents(localEv.splice(0));
-    if (mode === 'host' && (sendTick++ % 2 === 0)) broadcast({ ...view, ev: netEv.splice(0), q: netSeq++ });
   }
 }
 // The simulation is driven from a Web Worker timer: browsers slow normal timers in a hidden/minimized tab to about
@@ -1737,6 +1740,170 @@ try {
   let n = 0;
   w.onmessage = () => { simStep(); if (++n % 60 === 0) netTick(); }; // netTick on the same un-throttled clock
 } catch (e) { setInterval(simStep, 1000 / 60); setInterval(() => netTick(), 1000); }
+
+// ================== GUEST SMOOTHING ==================
+// The host owns the game. A guest still moves its own player the moment a key is pressed, using the same movePlayer()
+// rules against the latest grid and bombs, and only corrects itself when the host clearly disagrees.
+const PRED_TOL_MOVE = 0.35, PRED_TOL_IDLE = 0.03, PRED_SNAP = 1.5, PRED_EASE = 12;
+let PRED = null, predAcc = 0;
+function predictReset() { PRED = null; predAcc = 0; }
+const overlaps = (x, y, i) => Math.abs(x - i % W) < 0.98 && Math.abs(y - ((i / W) | 0)) < 0.98;
+function predictable(v) {
+  const p = v && v.p && v.p[mySlot];
+  return !!(p && p[2] && (v.ph === 'play' || v.ph === 'grace') && !joinedLate);
+}
+const bombTilesOf = v => new Set(v.b.filter(b => !(b[3] & 8)).map(b => idx(Math.round(b[0]), Math.round(b[1]))));
+// a stand-in for S that movePlayer() can read: the latest grid and bombs as this guest knows them
+function predWorld(v) {
+  return { grid: v.g.split(''), bombs: [...PRED.known].map(i => ({ x: i % W, y: (i / W) | 0, mine: false, dead: false, pass: new Set(PRED.pass.has(i) ? [mySlot] : []) })) };
+}
+function predPlayer(v) {
+  const p = v.p[mySlot];
+  return { slot: mySlot, x: PRED.x, y: PRED.y, dir: PRED.dir, walk: PRED.walk, speed: p[8], ghost: !!p[10], kick: false,
+    softT: (p[12] & 4) ? (p[21] || 1) : 0, curse: p[16] || '' };
+}
+// can a player stand on tile (x, y) as far as the guest knows?
+function predFree(x, y) {
+  const i = idx(Math.round(x), Math.round(y)), c = view.g[i], p = view.p[mySlot];
+  if (c !== '.' && !(c === '+' && (p[12] & 4))) return false;
+  return !PRED.known.has(i) || PRED.pass.has(i) || !!p[10];
+}
+// where the guest's player was at time t (ms), from the recent history
+function histAt(t) {
+  const h = PRED.hist; if (!h.length) return null;
+  if (t <= h[0].t) return h[0];
+  for (let k = h.length - 1; k > 0; k--) if (h[k - 1].t <= t) {
+    const a = h[k - 1], b = h[k], f = b.t > a.t ? (t - a.t) / (b.t - a.t) : 1;
+    return { x: a.x + (b.x - a.x) * Math.min(1, f), y: a.y + (b.y - a.y) * Math.min(1, f) };
+  }
+  return h[h.length - 1];
+}
+function predMoveTo(x, y) { // move the predicted position without a visible jump (the shown position eases over)
+  const dx = x - PRED.x, dy = y - PRED.y;
+  PRED.offX -= dx; PRED.offY -= dy; PRED.x = x; PRED.y = y; PRED.prevX += dx; PRED.prevY += dy;
+  for (const h of PRED.hist) { h.x += dx; h.y += dy; } // the past is corrected too, so it isn't counted twice
+  for (const i of [...PRED.pass]) if (!overlaps(x, y, i)) PRED.pass.delete(i);
+}
+function predictOnSnapshot(d, now) {
+  if (!predictable(d)) { PRED = null; return; }
+  const sp = d.p[mySlot], sx = sp[0], sy = sp[1];
+  if (!PRED) PRED = { x: sx, y: sy, prevX: sx, prevY: sy, dir: sp[3], walk: sp[4], offX: 0, offY: 0, hist: [], pass: new Set(), known: new Set(), lastInput: -1e9, over: 0 };
+  // our own new bomb under us: we may walk off it, like on the host (anyone else's bomb blocks us)
+  const tiles = bombTilesOf(d);
+  for (const b of d.b) {
+    const i = idx(Math.round(b[0]), Math.round(b[1]));
+    if (!(b[3] & 8) && b[5] === mySlot && !PRED.known.has(i) && overlaps(PRED.x, PRED.y, i)) PRED.pass.add(i);
+  }
+  for (const i of [...PRED.pass]) if (!tiles.has(i)) PRED.pass.delete(i);
+  PRED.known = tiles; PRED.world = null;
+  // compare with where we were when the host made this snapshot (about one round trip ago); once we've been standing
+  // still for longer than that, compare with where we are now
+  const lag = Math.min(400, Math.max(20, myPing || 100)) + 25;
+  const idle = now - PRED.lastInput > lag + 150;
+  const ref = idle ? PRED : (histAt(now - lag) || PRED);
+  const ex = sx - ref.x, ey = sy - ref.y, e = Math.hypot(ex, ey);
+  // while moving, latency wobble shows up as distance: allow for it at the speed we're going (tiles/s × seconds)
+  const speed = (3.2 + 0.55 * sp[8]) * (sp[16] === 'slow' ? 0.5 : sp[16] === 'rush' ? 1.8 : 1);
+  const wobble = arrivals.length ? (Math.max(...arrivals) - Math.min(...arrivals)) / 1000 : 0.05;
+  const tol = idle ? PRED_TOL_IDLE : Math.max(PRED_TOL_MOVE, speed * (wobble + 0.05));
+  PRED.over = e > tol ? (PRED.over || 0) + 1 : 0;
+  if (e > PRED_SNAP + (idle ? 0 : tol)) { // teleport, portal, new round…: jump
+    PRED.x = PRED.prevX = sx; PRED.y = PRED.prevY = sy; PRED.offX = PRED.offY = 0; PRED.hist = []; PRED.over = 0;
+    PRED.pass = new Set([...tiles].filter(i => overlaps(sx, sy, i)));
+  } else if (e > tol && (idle || PRED.over >= 2)) { // moving: only when two snapshots in a row agree we're off
+    PRED.over = 0;
+    let nx = PRED.x + ex, ny = PRED.y + ey;
+    if (!predFree(nx, ny)) { nx = sx; ny = sy; } // never land inside something: take the host's word
+    predMoveTo(nx, ny);
+  }
+}
+function predictStep(now, dt) {
+  const v = view;
+  if (!PRED || !predictable(v)) { PRED = null; return; }
+  const inp = dirState(0);
+  if (inp.up || inp.down || inp.left || inp.right) PRED.lastInput = now;
+  if (!PRED.world) PRED.world = predWorld(v);
+  const pp = predPlayer(v), saved = S;
+  predAcc = Math.min(0.25, predAcc + dt);
+  S = PRED.world;
+  try { while (predAcc >= 1 / 60) { PRED.prevX = pp.x; PRED.prevY = pp.y; movePlayer(pp, inp, 1 / 60); predAcc -= 1 / 60; } }
+  finally { S = saved; }
+  PRED.x = pp.x; PRED.y = pp.y; PRED.dir = pp.dir; PRED.walk = pp.walk;
+  for (const i of [...PRED.pass]) if (!overlaps(PRED.x, PRED.y, i)) { PRED.pass.delete(i); PRED.world = null; }
+  PRED.hist.push({ t: now, x: PRED.x, y: PRED.y });
+  while (PRED.hist.length && PRED.hist[0].t < now - 1000) PRED.hist.shift();
+  const k = Math.exp(-dt * PRED_EASE); PRED.offX *= k; PRED.offY *= k;
+}
+
+// ---- other players and moving bombs: drawn a little in the past, smoothly between two snapshots ----
+// Snapshots are timed by the host's own clock (it sends one every other 60 Hz step, numbered q), not by when they
+// happen to arrive, so network jitter doesn't turn into jerky movement.
+const SNAP_MS = 2000 / 60;
+let snapBuf = [], arrivals = [], interpDelay = 60, lastIT = -Infinity;
+function interpReset() { snapBuf = []; arrivals = []; interpDelay = 60; lastIT = -Infinity; }
+function interpOnSnapshot(d, now) {
+  if (typeof d.q !== 'number') return;
+  const ht = d.q * SNAP_MS;
+  snapBuf.push({ ht, v: d });
+  while (snapBuf.length > 2 && snapBuf[1].ht < ht - 1000) snapBuf.shift();
+  arrivals.push(now - ht); if (arrivals.length > 60) arrivals.shift();
+  const lo = Math.min(...arrivals), hi = Math.max(...arrivals);
+  // enough delay to always have a snapshot to move toward; it grows at once but shrinks slowly after a lag spike
+  const want = Math.min(160, Math.max(40, hi - lo + SNAP_MS + 5));
+  interpDelay = want > interpDelay ? want : Math.max(want, interpDelay - 2);
+}
+// host time we draw other players at: never goes backwards, never runs more than 25% fast, never past the newest data
+function interpTime(now, dt) {
+  let t = now - Math.min(...arrivals) - interpDelay;
+  if (lastIT > -Infinity) t = Math.max(lastIT, Math.min(t, lastIT + dt * 1000 * 1.25));
+  t = Math.min(t, snapBuf[snapBuf.length - 1].ht);
+  return (lastIT = t);
+}
+// position (and throw height) between snapshots a and b; fuse and flags stay the latest ones (cur)
+function lerpBomb(a, b, f, cur) { return [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f, cur[2], cur[3], Math.round(a[4] + (b[4] - a[4]) * f), cur[5]]; }
+function nearestBomb(list, ref, maxD) {
+  let best = null, bd = maxD;
+  for (const b of list) if (b[5] === ref[5] && !(b[3] & 8)) { const d = Math.abs(b[0] - ref[0]) + Math.abs(b[1] - ref[1]); if (d < bd) { bd = d; best = b; } }
+  return best;
+}
+function interpView(now, dt) {
+  if (snapBuf.length < 2 || !arrivals.length) return null;
+  const t = interpTime(now, dt);
+  let k = snapBuf.length - 1;
+  while (k > 0 && snapBuf[k - 1].ht > t) k--;
+  if (k === 0) return { a: snapBuf[0].v, b: snapBuf[0].v, f: 0 };
+  const A = snapBuf[k - 1], B = snapBuf[k];
+  return { a: A.v, b: B.v, f: Math.max(0, Math.min(1, (t - A.ht) / (B.ht - A.ht))) };
+}
+
+// ---- guest: what to draw this frame ----
+function guestUpdate(now, dt) {
+  if (!view) return view;
+  predictStep(now, dt);
+  const iv = interpView(now, dt);
+  if (!PRED && !iv) return view;
+  const dv = Object.assign({}, view);
+  dv.p = view.p.map((p, i) => {
+    if (PRED && i === mySlot) { // drawn between the last two game steps, so fast screens see smooth movement
+      const q = p.slice(), a = predAcc * 60;
+      q[0] = PRED.prevX + (PRED.x - PRED.prevX) * a + PRED.offX; q[1] = PRED.prevY + (PRED.y - PRED.prevY) * a + PRED.offY;
+      q[3] = PRED.dir; q[4] = PRED.walk; return q;
+    }
+    if (!iv) return p;
+    const pa = iv.a.p[i], pb = iv.b.p[i];
+    if (!pa || !pb || Math.abs(pa[0] - pb[0]) + Math.abs(pa[1] - pb[1]) > 1.5) return p; // a jump (teleport, new round): show it
+    const q = p.slice(), f = iv.f;
+    q[0] = pa[0] + (pb[0] - pa[0]) * f; q[1] = pa[1] + (pb[1] - pa[1]) * f;
+    q[3] = f < 0.5 ? pa[3] : pb[3]; q[4] = pa[4] + (pb[4] - pa[4]) * f;
+    return q;
+  });
+  if (iv) dv.b = view.b.map(b => { // same timeline as the players: sliding / flying bombs move smoothly, still ones stay put
+    if (b[3] & 8) return b;
+    const bb = nearestBomb(iv.b.b, b, 3), ba = bb && nearestBomb(iv.a.b, bb, 1.6);
+    return bb && ba ? lerpBomb(ba, bb, iv.f, b) : b;
+  });
+  return dv;
+}
 
 // ---- connection quality (ping + direct/relay) ----
 function netTick() {
@@ -1785,7 +1952,7 @@ function updateNet() {
 let lastR = performance.now();
 function frame(now) {
   const dt = Math.min(0.1, (now - lastR) / 1000); lastR = now;
-  if (started && view) render(view, dt);
+  if (started && view) render(mode === 'guest' ? guestUpdate(now, dt) : view, dt);
   requestAnimationFrame(frame);
 }
 requestAnimationFrame(frame);
@@ -1833,7 +2000,7 @@ function resetAll() {
   conns.forEach(c => { try { c.conn.close(); } catch (e) { } }); conns = [];
   if (hostConn) { try { hostConn.close(); } catch (e) { } hostConn = null; }
   if (peer) { try { peer.destroy(); } catch (e) { } peer = null; }
-  keys.clear(); inputs = []; myPing = 0; myRelay = false; joinedLate = false; lastSnapQ = -1;
+  predictReset(); interpReset(); keys.clear(); inputs = []; myPing = 0; myRelay = false; joinedLate = false; lastSnapQ = -1;
   const n = $('#net'); if (n) n.textContent = '';
 }
 function toMenu(msg) { resetAll(); show('menu'); menuStatus(msg); }
@@ -1890,24 +2057,28 @@ function startHostPeer(tries = 0) {
       entry.open = true; conns.push(entry);
       if (!started) renderLobby(); // mid-game joiners are placed once their name arrives (hello)
     });
-    conn.on('data', d => {
-      if (!d || typeof d !== 'object') return;
-      entry.seen = performance.now();
-      if (d.t === 'bye') { conn.close(); dropConn(entry); return; }
-      if (onPing(conn, d)) return;
-      if (d.t === 'pong') { entry.ping = performance.now() - d.c; return; }
-      if (d.t === 'hello') {
-        entry.name = String(d.name || 'Guest').slice(0, 12);
-        if (!started) renderLobby();
-        else if (entry.slot < 0 && !hotJoin(entry)) { entry.open = false; conns = conns.filter(c => c !== entry); reject('Room is full.'); }
-      }
-      else if (d.t === 'in' && entry.slot >= 0 && d.k) {
-        if (typeof d.k.q === 'number') { if (d.k.q < entry.inQ) return; entry.inQ = d.k.q; } // drop stale, out-of-order input
-        inputs[entry.slot] = d.k;
-      }
-    });
+    entry.reject = reject;
+    conn.on('data', d => hostOnData(entry, d));
     conn.on('close', () => dropConn(entry));
   });
+}
+// A message from one guest's connection (entry = that guest's record in conns)
+function hostOnData(entry, d) {
+  if (!d || typeof d !== 'object') return;
+  const conn = entry.conn;
+  entry.seen = performance.now();
+  if (d.t === 'bye') { try { conn.close(); } catch (e) { } dropConn(entry); return; }
+  if (onPing(conn, d)) return;
+  if (d.t === 'pong') { entry.ping = performance.now() - d.c; return; }
+  if (d.t === 'hello') {
+    entry.name = String(d.name || 'Guest').slice(0, 12);
+    if (!started) renderLobby();
+    else if (entry.slot < 0 && !hotJoin(entry)) { entry.open = false; conns = conns.filter(c => c !== entry); if (entry.reject) entry.reject('Room is full.'); }
+  }
+  else if (d.t === 'in' && entry.slot >= 0 && d.k) {
+    if (typeof d.k.q === 'number') { if (d.k.q < entry.inQ) return; entry.inQ = d.k.q; } // drop stale, out-of-order input
+    inputs[entry.slot] = d.k;
+  }
 }
 // Hot join: someone connects while a match is running. They take a free (left) slot — getting their old score back
 // if they rejoin under the same name — or a new slot, and play from the next round (immediately during the countdown).
@@ -2042,30 +2213,34 @@ $('#btnJoin').onclick = () => {
       show('lobby'); renderLobby([{ name: '…', kind: 'host' }, { name: myName, kind: 'guest' }]);
       lobbyStatus(''); menuStatus('');
     });
-    hostConn.on('data', d => {
-      if (!d || typeof d !== 'object') return;
-      if (onPing(hostConn, d)) return;
-      if (d.t === 'pong') { const r = performance.now() - d.c; myPing = myPing ? myPing * 0.6 + r * 0.4 : r; return; }
-      if (d.t === 'reject') toMenu(d.why);
-      else if (d.t === 'bye') toMenu('The host closed the game.');
-      else if (d.t === 'lobby') {
-        const list = (d.players || []).map((p, i) => typeof p === 'string' ? { name: p, kind: i ? 'guest' : 'host' }
-          : { name: String(p.name), kind: p.bot ? 'bot' : i ? 'guest' : 'host', level: p.bot });
-        renderLobby(list, cleanSet(d.set)); lobbyStatus('Waiting for the host to start…');
-      }
-      else if (d.t === 'start') { mySlot = d.slot; joinedLate = !!d.late; localIn[0].bombSeq = 0; localIn[0].teleSeq = 0; localIn[0].detSeq = 0; lastSent = ''; lastSnapQ = -1; lastSnapAt = performance.now(); view = null; enterGame(); sendGuestInput(); }
-      else if (d.t === 's') {
-        if (d.ev) playEvents(d.ev);
-        if (typeof d.q === 'number') { if (d.q <= lastSnapQ) return; lastSnapQ = d.q; } // an older snapshot arrived late: skip it
-        lastSnapAt = performance.now();
-        if (d.w && (d.w !== W || d.h !== H)) setSize(d.w, d.h);
-        view = d;
-        if (joinedLate && d.p[mySlot] && d.p[mySlot][2]) joinedLate = false;
-      }
-    });
+    hostConn.on('data', guestOnData);
     hostConn.on('close', () => { if (mode === 'guest') toMenu('The host closed the game.'); });
   });
 };
+// A message from the host
+function guestOnData(d) {
+  if (!d || typeof d !== 'object') return;
+  if (onPing(hostConn, d)) return;
+  if (d.t === 'pong') { const r = performance.now() - d.c; myPing = myPing ? myPing * 0.6 + r * 0.4 : r; return; }
+  if (d.t === 'reject') toMenu(d.why);
+  else if (d.t === 'bye') toMenu('The host closed the game.');
+  else if (d.t === 'lobby') {
+    const list = (d.players || []).map((p, i) => typeof p === 'string' ? { name: p, kind: i ? 'guest' : 'host' }
+      : { name: String(p.name), kind: p.bot ? 'bot' : i ? 'guest' : 'host', level: p.bot });
+    renderLobby(list, cleanSet(d.set)); lobbyStatus('Waiting for the host to start…');
+  }
+  else if (d.t === 'start') { predictReset(); interpReset(); mySlot = d.slot; joinedLate = !!d.late; localIn[0].bombSeq = 0; localIn[0].teleSeq = 0; localIn[0].detSeq = 0; lastSent = ''; lastSnapQ = -1; lastSnapAt = performance.now(); view = null; enterGame(); sendGuestInput(); }
+  else if (d.t === 's') {
+    if (d.ev) playEvents(d.ev);
+    if (typeof d.q === 'number') { if (d.q <= lastSnapQ) return; lastSnapQ = d.q; } // an older snapshot arrived late: skip it
+    lastSnapAt = performance.now();
+    if (d.w && (d.w !== W || d.h !== H)) setSize(d.w, d.h);
+    view = d;
+    if (joinedLate && d.p[mySlot] && d.p[mySlot][2]) joinedLate = false;
+    interpOnSnapshot(d, performance.now());
+    predictOnSnapshot(d, performance.now());
+  }
+}
 </script>
 </body>
 </html>
