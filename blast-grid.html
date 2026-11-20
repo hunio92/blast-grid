@@ -1992,12 +1992,14 @@ function guestUpdate(now, dt) {
     if (b[3] & 8) return b;
     // a bomb sitting still is matched by its tile only: pairing a new bomb with a nearby older one drew it on top of
     // that one until the older snapshots caught up (it seemed to vanish and come back)
-    if (stillBomb(b) && iv.b.b.some(q => q[5] === b[5] && q[0] === b[0] && q[1] === b[1])) return b;
+    // ours shows at once (we are drawn as of now); anyone else's only once the moment their character is drawn at has
+    // reached it (it's in the earlier snapshot of the pair), or it would appear before they got there
+    if (stillBomb(b) && (b[5] === mySlot || iv.a.b.some(q => q[5] === b[5] && q[0] === b[0] && q[1] === b[1]))) return b;
     const bb = nearestBomb(iv.b.b, b, 3);
-    if (!bb || (stillBomb(bb) && stillBomb(b))) return b; // a different bomb: this one is new here
+    if (!bb || (stillBomb(bb) && stillBomb(b))) return b[5] === mySlot ? b : null; // new here and not yet due
     const ba = nearestBomb(iv.a.b, bb, 1.6);
     return bb && ba ? lerpBomb(ba, bb, iv.f, b) : b;
-  });
+  }).filter(Boolean);
   if (PRED && PRED.pend.length) dv.b = (dv.b || view.b).concat(PRED.pend.map(b => [b.i % W, (b.i / W) | 0, Math.max(0.1, FUSE - (now - b.t) / 1000), b.fl, 0, mySlot]));
   return dv;
 }

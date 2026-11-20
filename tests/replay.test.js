@@ -77,3 +77,22 @@ test('bombs dropped while walking never blink out and back', () => {
   assert.ok(first.size >= 4, 'placed ' + first.size);
   assert.strictEqual(blinks, 0);
 });
+
+test("someone else's bomb doesn't show before their character gets there", () => {
+  for (let seed = 1; seed <= 6; seed++) {
+    const link = ready({ seed, latency: [30, 150] });
+    // the host (slot 0) walks right along the top row, dropping a bomb now and then
+    link.host.run(`for (let x = 1; x < W - 1; x++) { const i = idx(x, 1); S.grid[i] = '.'; S.hidden.delete(i); S.pu.delete(i); }
+      S.players[0].maxBombs = 5; S.players[0].hp = 99; S.players[0].inv = 99; keys.add(KEYMAP.a.right[0]);`);
+    let t = 0, worst = 0;
+    link.step(2000, l => {
+      tickGuest(l); t += 1000 / 60;
+      if (Math.floor(t / 350) !== Math.floor((t - 1000 / 60) / 350)) l.host.run('localIn[0].bombSeq++;');
+      const r = JSON.parse(l.guest.run('JSON.stringify(__dv ? [__dv.p[0][0], __dv.b.filter(b => b[5] === 0).map(b => b[0])] : null)'));
+      if (!r) return;
+      for (const bx of r[1]) worst = Math.max(worst, bx - r[0]); // bomb ahead of where its owner is drawn
+    });
+    link.host.run('keys.clear()');
+    assert.ok(worst < 0.62, `seed ${seed}: a bomb showed ${worst.toFixed(2)} tiles ahead of its owner`);
+  }
+});
