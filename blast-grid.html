@@ -2080,17 +2080,29 @@ function hostOnData(entry, d) {
     inputs[entry.slot] = d.k;
   }
 }
-// Hot join: someone connects while a match is running. They take a free (left) slot — getting their old score back
-// if they rejoin under the same name — or a new slot, and play from the next round (immediately during the countdown).
+// Hot join: someone connects while a match is running. Seat order: a seat they left under their name, their old seat
+// if a bot is keeping it, any left seat, a new seat, and finally the last bot's seat (that bot waits on their record
+// as `bumped` and comes back when they leave). Rejoining under the same name gets their score back. They play from
+// the next round (immediately during the countdown).
 function hotJoin(entry) {
   if (!M) return false;
   const taken = i => i === 0 || conns.some(c => c !== entry && c.open && c.slot === i);
-  const free = M.players.map((pl, i) => i).filter(i => !taken(i) && M.players[i].connected === false);
-  let slot = free.find(i => M.players[i].name === entry.name);
-  const back = slot !== undefined;
-  if (!back) slot = free.length ? free[0] : M.players.length < MAX_PLAYERS ? M.players.length : -1;
+  const seats = M.players.map((pl, i) => i).filter(i => !taken(i));
+  const free = seats.filter(i => M.players[i].connected === false), bots = seats.filter(i => M.players[i].bot);
+  const away = M.away && M.away[entry.name];
+  let slot = free.find(i => M.players[i].name === entry.name), keep = slot !== undefined ? M.players[slot] : null;
+  if (slot === undefined && away && bots.includes(away.seat)) slot = away.seat;
+  if (slot === undefined) slot = free.length ? free[0] : M.players.length < MAX_PLAYERS ? M.players.length : bots.length ? bots[bots.length - 1] : -1;
   if (slot < 0) return false;
-  M.players[slot] = newPl(entry.name, back ? M.players[slot] : null); // rejoining under the same name keeps the stats
+  if (!keep && away) keep = away.rec;
+  if (M.away) delete M.away[entry.name];
+  const bumped = M.players[slot] && M.players[slot].bot ? M.players[slot] : null;
+  M.players[slot] = newPl(entry.name, keep); // rejoining under the same name keeps the stats
+  if (bumped) {
+    M.players[slot].bumped = bumped;
+    if (S && S.players[slot]) { S.players[slot].alive = false; S.players[slot].deathT = 9; } // gone, no kill, no animation
+    if (S) delete S.bots[slot];
+  }
   entry.slot = slot; inputs[slot] = undefined;
   if (S) {
     const now = S.phase === 'count';
@@ -2100,12 +2112,21 @@ function hotJoin(entry) {
   hudKey = '';
   return true;
 }
-// A guest is gone (closed the tab, lost the network, or said bye): free their slot so they can hot-join back.
+// A guest is gone (closed the tab, lost the network, or said bye). If they took a bot's seat, that bot comes back and
+// plays their character on; otherwise the seat is left free so they can hot-join back. In the lobby, a bot their
+// arrival hid shows again (lobbyList seats bots by free room).
 function dropConn(entry) {
   if (entry.gone) return; entry.gone = true;
   entry.open = false; conns = conns.filter(c => c !== entry);
-  if (started && entry.slot >= 0 && M && M.players[entry.slot]) {
-    M.players[entry.slot].connected = false;
+  const pl = started && entry.slot >= 0 && M && M.players[entry.slot];
+  if (pl && pl.bumped) {
+    const bot = pl.bumped; delete pl.bumped;
+    M.away = M.away || {}; M.away[pl.name] = { rec: pl, seat: entry.slot };
+    M.players[entry.slot] = bot;
+    if (S) delete S.bots[entry.slot]; // fresh brain; it keeps the input counters, so nothing fires by itself
+    hudKey = '';
+  } else if (pl) {
+    pl.connected = false;
     if (S && S.players[entry.slot]) kill(S.players[entry.slot], null);
   }
   if (!started) renderLobby();
@@ -2114,9 +2135,13 @@ function broadcast(msg) { for (const c of conns) if (c.open && c.conn.open) { tr
 const LEVEL_LABEL = { easy: 'EASY', normal: 'NORMAL', hard: 'HARD' };
 const botName = j => 'BOT ' + (j + 1);
 function localName(i) { return localHumans === 1 ? myName : i === 0 ? (myName === 'Player' ? 'Player 1' : myName) : 'Player 2'; }
+// how many of the host's bots get a seat: online, guests take bots' seats (last bot first) and give them back on leaving
+function seatedBots(humans = mode === 'local' ? localHumans : 1 + conns.filter(c => c.open).length) {
+  return mode === 'local' ? lobbyBots.length : Math.max(0, Math.min(lobbyBots.length, MAX_PLAYERS - humans));
+}
 // who is in the lobby, in slot order
 function lobbyList() {
-  const bots = lobbyBots.map((b, j) => ({ name: botName(j), kind: 'bot', level: b.level }));
+  const bots = lobbyBots.slice(0, seatedBots()).map((b, j) => ({ name: botName(j), kind: 'bot', level: b.level }));
   if (mode === 'local') return Array.from({ length: localHumans }, (_, i) => ({ name: localName(i), kind: 'local' })).concat(bots);
   return [{ name: myName, kind: 'host' }].concat(conns.filter(c => c.open).map(c => ({ name: c.name, kind: 'guest' })), bots);
 }
@@ -2148,13 +2173,8 @@ function renderLobby(list, set) {
 function addBot() { if (mode !== 'guest' && lobbyList().length < MAX_PLAYERS) { lobbyBots.push({ level: 'normal' }); renderLobby(); } }
 function cycleBot(j) { const b = lobbyBots[j]; if (b && mode !== 'guest') { b.level = BOT_CYCLE[b.level] || 'normal'; renderLobby(); } }
 function removeBot(j) { if (mode !== 'guest' && lobbyBots[j]) { lobbyBots.splice(j, 1); renderLobby(); } }
-// a guest is joining the lobby: drop the last bot if that's what it takes to make room
-function makeRoomForGuest() {
-  const humans = 1 + conns.filter(c => c.open).length;
-  if (humans + lobbyBots.length < MAX_PLAYERS) return true;
-  if (!lobbyBots.length) return false;
-  lobbyBots.pop(); return true;
-}
+// a guest is joining the lobby: there's room unless every seat is a human (bots step aside, see seatedBots)
+function makeRoomForGuest() { return 1 + conns.filter(c => c.open).length < MAX_PLAYERS; }
 $('#btnAddBot').onclick = addBot;
 $('#plist').onclick = e => {
   const t = e.target, del = t.closest && t.closest('[data-del]');
@@ -2170,17 +2190,21 @@ $('#btnP2').onclick = () => {
 };
 // Slots: offline → humans then bots; online → host, guests, bots. Also used for rematches (R).
 function startMatch() {
-  const set = cleanSet(SET), bots = lobbyBots.map((b, j) => newPl(botName(j), null, b.level));
+  const set = cleanSet(SET), allBots = lobbyBots.map((b, j) => newPl(botName(j), null, b.level));
+  let bots = allBots;
   if (mode === 'local') {
     M = { players: Array.from({ length: localHumans }, (_, i) => newPl(localName(i))).concat(bots), target: set.wins, set, id: matchId() };
   } else {
     // mid-session, a guest still between "connected" and "hello" has no slot yet: hello will hot-join (or reject) them
     const open = conns.filter(c => c.open && (!started || c.slot >= 0));
+    bots = allBots.slice(0, seatedBots(1 + open.length));
     if (open.length < 1 && !bots.length) { // everyone left: back to lobby
       started = false; show('lobby'); renderLobby(); lobbyStatus('Your colleague left. Waiting for players…'); return;
     }
     open.forEach((c, i) => c.slot = i + 1);
     M = { players: [newPl(myName)].concat(open.map(c => newPl(c.name)), bots), target: set.wins, set, id: matchId() };
+    // bots without a seat wait on a guest's record (last guest first) and come back if that guest leaves
+    allBots.slice(bots.length).forEach((b, k) => { M.players[open.length - k].bumped = b; });
     open.forEach(c => c.conn.send({ t: 'start', slot: c.slot }));
   }
   inputs = []; readLocalInputs(); applySet(set);
