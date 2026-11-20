@@ -112,12 +112,17 @@ test('lobby: add, cycle and remove bots', () => {
   assert.strictEqual(run('lobbyBots.length'), 2);
 });
 
-test('guest join evicts last bot', () => {
+test('guest join hides the last bot; leaving shows it again', () => {
   const { run } = loadGame();
-  run("mode = 'host'; conns = []; lobbyBots = [{ level: 'easy' }, { level: 'normal' }, { level: 'hard' }];");
+  run("mode = 'host'; myName = 'H'; conns = []; lobbyBots = [{ level: 'easy' }, { level: 'normal' }, { level: 'hard' }];");
+  const bots = () => JSON.parse(run("JSON.stringify(lobbyList().filter(p => p.kind === 'bot').map(p => p.level))"));
   assert.strictEqual(run('makeRoomForGuest()'), true);
-  assert.deepStrictEqual(JSON.parse(run('JSON.stringify(lobbyBots.map(b => b.level))')), ['easy', 'normal']);
-  run("conns = [1, 2, 3].map(i => ({ open: true, name: 'G' + i, conn: { open: false } })); lobbyBots = [];");
+  run("var G = { open: true, name: 'G', conn: { open: false } }; conns.push(G);");
+  assert.deepStrictEqual(bots(), ['easy', 'normal']);
+  assert.strictEqual(run('lobbyBots.length'), 3, 'the host\'s bots are remembered');
+  run('dropConn(G)');
+  assert.deepStrictEqual(bots(), ['easy', 'normal', 'hard'], 'bot comes back');
+  run("conns = [1, 2, 3].map(i => ({ open: true, name: 'G' + i, conn: { open: false } }));");
   assert.strictEqual(run('makeRoomForGuest()'), false, 'full of humans');
 });
 
