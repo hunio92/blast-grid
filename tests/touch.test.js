@@ -50,8 +50,9 @@ test('a guest sends touch input to the host', () => {
   run("mode = 'guest'; var SENT = []; hostConn = { open: true, send: m => SENT.push(m) };");
   run("touchPress('bomb'); setTouchStick(0, 1);");
   const sent = JSON.parse(run('JSON.stringify(SENT)'));
-  assert.ok(sent.some(m => m.t === 'in' && m.k.bombSeq === 1));
-  assert.ok(sent.some(m => m.t === 'in' && m.k.down === true));
+  const ks = sent.filter(m => m.t === 'in').flatMap(m => m.ev.map(e => e[2]));
+  assert.ok(ks.some(k => k.bombSeq === 1));
+  assert.ok(ks.some(k => k.down === true));
 });
 
 test('touch direction clears when the window loses focus', () => {

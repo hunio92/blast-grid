@@ -116,6 +116,7 @@
   body.touch.chatTyping #chatLog{background:rgba(20,27,47,.9);padding:6px}
   body.touch #chatIn{pointer-events:auto}
   body.touch #chatBtn{display:block}
+  body.touch #chatIn{font-size:16px} /* smaller makes phones zoom in on focus */
 
   /* ---- touch (phones held sideways) ---- */
   #touch,#tbar,#rotate{display:none}
@@ -705,7 +706,8 @@ function tick(dt) {
     if (p.curseT > 0) { p.curseT -= dt; if (p.curseT <= 0) { p.curse = ''; p.curseT = 0; } }
     if (p.invis > 0) p.invis = Math.max(0, p.invis - dt);
     if (p.softT > 0) { p.softT -= dt; if (p.softT <= 0) { p.softT = 0; unstick(p); } }
-    movePlayer(p, inp, dt);
+    if (inp.prev && inp.prevF > 0) { movePlayer(p, inp.prev, dt * inp.prevF); movePlayer(p, inp, dt * (1 - inp.prevF)); }
+    else movePlayer(p, inp, dt);
     if (inp.bombSeq !== undefined && inp.bombSeq !== p.lastSeq) { p.lastSeq = inp.bombSeq; placeBomb(p); }
     if (inp.teleSeq !== undefined && inp.teleSeq !== p.lastTele) { p.lastTele = inp.teleSeq; teleport(p); }
     if (inp.detSeq !== undefined && inp.detSeq !== p.lastDet) { p.lastDet = inp.detSeq; detonate(p); }
@@ -796,6 +798,7 @@ function snapshot() {
     p: S.players.map(p => [+p.x.toFixed(3), +p.y.toFixed(3), p.alive ? 1 : 0, p.dir, +p.walk.toFixed(2), +Math.min(p.deathT, 9).toFixed(2), p.maxBombs, p.range, p.speed, p.kick ? 1 : 0, p.ghost ? 1 : 0, p.tele,
       (p.remote ? 1 : 0) | (p.pierce ? 2 : 0) | (p.softT > 0 ? 4 : 0) | (p.line ? 8 : 0), p.power, p.hp, +p.inv.toFixed(2), p.curse, Math.ceil(p.curseT),
       +p.invis.toFixed(2), (p.glove ? 1 : 0) | (p.star ? 2 : 0), p.mines, +p.softT.toFixed(2)]),
+    ag: mode === 'host' ? S.players.map((p, i) => { const c = conns.find(c => c.open && c.slot === i); return c && c.rp && c.rp.ag != null ? +c.rp.ag.toFixed(1) : null; }) : undefined,
     ph: S.phase, ct: +S.t.toFixed(2), tm: +S.time.toFixed(2), rt: roundTime, wt: M.target, w: W, h: H, ban: S.banner, mid: M.id,
     sc: M.players.map(q => [q.kills || 0, q.deaths || 0, q.selfK || 0, q.crates || 0, q.items || 0]),
     names: M.players.map(q => q.name), bt: M.players.map(q => q.bot || ''), wins: M.players.map(q => q.wins), con: M.players.map(q => q.connected !== false),
@@ -1165,12 +1168,23 @@ function dirState(li) {
   st.up = any('up') || !!t.up; st.down = any('down') || !!t.down; st.left = any('left') || !!t.left; st.right = any('right') || !!t.right;
   return st;
 }
-function sendGuestInput() {
+// Each change of keys is sent with the time it happened on this screen (gt), so the host can replay them with the same
+// gaps between them — network jitter then can't change how long you walked. The last few changes go in every message
+// and are resent every 100 ms, so a lost message (say, letting go of a key) is made up for quickly.
+let inHist = [], inSentAt = 0, moveEv = []; // moveEv: [{ t, k }] when our keys changed, for the prediction
+function sendGuestInput(force) {
   if (mode !== 'guest' || !hostConn || !hostConn.open) return;
-  const st = dirState(0);
+  const st = dirState(0), now = performance.now();
   const k = { up: st.up, down: st.down, left: st.left, right: st.right, pri: st.pri, bombSeq: st.bombSeq, teleSeq: st.teleSeq, detSeq: st.detSeq };
   const s = JSON.stringify(k);
-  if (s !== lastSent) { lastSent = s; k.q = ++inSeq; hostConn.send({ t: 'in', k }); } // q: host ignores inputs that arrive out of order
+  if (s !== lastSent) {
+    lastSent = s; const t = +now.toFixed(1); inHist.push([++inSeq, t, k]); if (inHist.length > 4) inHist.shift();
+    moveEv.push({ t, k }); while (moveEv.length > 2 && moveEv[1].t < now - 2000) moveEv.shift();
+  }
+  else if (!force) return;
+  if (!inHist.length) return;
+  inSentAt = now;
+  try { hostConn.send({ t: 'in', st: +now.toFixed(1), ev: inHist }); } catch (e) { }
 }
 
 // ---- key rebinding screen ----
@@ -1759,10 +1773,12 @@ let lastT = performance.now(), acc = 0, hostTicks = 0;
 function simStep() {
   const now = performance.now(), dt = Math.min(0.25, (now - lastT) / 1000); lastT = now;
   chatTick(now);
+  if (mode === 'guest' && started && now - inSentAt >= 100) sendGuestInput(true);
   if ((mode === 'local' || mode === 'host') && started && S) {
     readLocalInputs();
     acc += dt;
     while (acc >= 1 / 60) {
+      if (mode === 'host') replayGuestInputs(now - (acc - 1 / 60) * 1000); // the moment this game step ends
       tick(1 / 60); acc -= 1 / 60;
       // one snapshot every 2 game ticks, so snapshot q is always at game time q × 33.3 ms (guests time playback by it;
       // timers in browsers fire every 16 ms, not 16.67, so counting timer calls would drift)
@@ -1826,25 +1842,39 @@ function predMoveTo(x, y) { // move the predicted position without a visible jum
 function predictOnSnapshot(d, now) {
   if (!predictable(d)) { PRED = null; return; }
   const sp = d.p[mySlot], sx = sp[0], sy = sp[1];
-  if (!PRED) PRED = { x: sx, y: sy, prevX: sx, prevY: sy, dir: sp[3], walk: sp[4], offX: 0, offY: 0, hist: [], pass: new Set(), known: new Set(), lastInput: -1e9, over: 0 };
+  if (!PRED) PRED = { x: sx, y: sy, prevX: sx, prevY: sy, dir: sp[3], walk: sp[4], offX: 0, offY: 0, hist: [], pass: new Set(), known: new Set(), lastInput: -1e9, over: 0,
+    bombSeq: dirState(0).bombSeq, pend: [] };
   // our own new bomb under us: we may walk off it, like on the host (anyone else's bomb blocks us)
   const tiles = bombTilesOf(d);
   for (const b of d.b) {
     const i = idx(Math.round(b[0]), Math.round(b[1]));
     if (!(b[3] & 8) && b[5] === mySlot && !PRED.known.has(i) && overlaps(PRED.x, PRED.y, i)) PRED.pass.add(i);
   }
+  // bombs we dropped ourselves show at once (pend); the host's copy replaces them, or they go if it refused
+  const ownAt = new Set(d.b.filter(b => b[5] === mySlot).map(b => idx(Math.round(b[0]), Math.round(b[1]))));
+  const late = Math.min(400, Math.max(20, myPing || 100)) * 2 + 400;
+  PRED.pend = PRED.pend.filter(b => !ownAt.has(b.i) && now - b.t < late);
+  for (const b of PRED.pend) tiles.add(b.i);
   for (const i of [...PRED.pass]) if (!tiles.has(i)) PRED.pass.delete(i);
   PRED.known = tiles; PRED.world = null;
   // compare with where we were when the host made this snapshot (about one round trip ago); once we've been standing
   // still for longer than that, compare with where we are now
   const lag = Math.min(400, Math.max(20, myPing || 100)) + 25;
   const idle = now - PRED.lastInput > lag + 150;
-  const ref = idle ? PRED : (histAt(now - lag) || PRED);
-  const ex = sx - ref.x, ey = sy - ref.y, e = Math.hypot(ex, ey);
-  // while moving, latency wobble shows up as distance: allow for it at the speed we're going (tiles/s × seconds)
   const speed = (3.2 + 0.55 * sp[8]) * (sp[16] === 'slow' ? 0.5 : sp[16] === 'rush' ? 1.8 : 1);
-  const wobble = arrivals.length ? (Math.max(...arrivals) - Math.min(...arrivals)) / 1000 : 0.05;
-  const tol = idle ? PRED_TOL_IDLE : Math.max(PRED_TOL_MOVE, speed * (wobble + 0.05));
+  const ag = d.ag && typeof d.ag[mySlot] === 'number' ? d.ag[mySlot] : null;
+  let ref, tol;
+  if (ag !== null) { // the host replays our keys with our timing and says which of our moments this snapshot is
+    ref = histAt(ag) || PRED;
+    // what's left is rounding to whole game steps (1/60 s) on each side: don't nudge a standing player for that
+    tol = idle ? Math.max(PRED_TOL_IDLE, speed * 1.15 / 60) : Math.max(0.12, speed * 2.5 / 60);
+  } else {
+    ref = idle ? PRED : (histAt(now - lag) || PRED);
+    // while moving, latency wobble shows up as distance: allow for it at the speed we're going (tiles/s × seconds)
+    const wobble = arrivals.length ? (Math.max(...arrivals) - Math.min(...arrivals)) / 1000 : 0.05;
+    tol = idle ? PRED_TOL_IDLE : Math.max(PRED_TOL_MOVE, speed * (wobble + 0.05));
+  }
+  const ex = sx - ref.x, ey = sy - ref.y, e = Math.hypot(ex, ey);
   PRED.over = e > tol ? (PRED.over || 0) + 1 : 0;
   if (e > PRED_SNAP + (idle ? 0 : tol)) { // teleport, portal, new round…: jump
     PRED.x = PRED.prevX = sx; PRED.y = PRED.prevY = sy; PRED.offX = PRED.offY = 0; PRED.hist = []; PRED.over = 0;
@@ -1856,16 +1886,37 @@ function predictOnSnapshot(d, now) {
     predMoveTo(nx, ny);
   }
 }
+// show our own plain bomb the moment we press the key (gloves, mines and line bombs wait for the host)
+function predictBomb(v, now) {
+  const p = v.p[mySlot]; if (!p || p[16] === 'nobomb' || (p[19] & 1) || p[20] > 0 || (p[12] & 8)) return;
+  const x = Math.round(PRED.x), y = Math.round(PRED.y), i = idx(x, y);
+  if (v.g[i] !== '.' || PRED.known.has(i) || (v.po || []).some(([a, b]) => a === i || b === i)) return;
+  if (v.b.filter(b => b[5] === mySlot && !(b[3] & 8)).length + PRED.pend.length >= p[6]) return;
+  PRED.pend.push({ i, t: now, fl: p[12] & 3 });
+  PRED.known = new Set([...PRED.known, i]); PRED.pass.add(i); PRED.world = null; // we stand on it: may walk off, not back on
+}
 function predictStep(now, dt) {
   const v = view;
   if (!PRED || !predictable(v)) { PRED = null; return; }
   const inp = dirState(0);
   if (inp.up || inp.down || inp.left || inp.right) PRED.lastInput = now;
+  if (inp.bombSeq !== PRED.bombSeq) { PRED.bombSeq = inp.bombSeq; predictBomb(v, now); }
   if (!PRED.world) PRED.world = predWorld(v);
   const pp = predPlayer(v), saved = S;
   predAcc = Math.min(0.25, predAcc + dt);
   S = PRED.world;
-  try { while (predAcc >= 1 / 60) { PRED.prevX = pp.x; PRED.prevY = pp.y; movePlayer(pp, inp, 1 / 60); predAcc -= 1 / 60; } }
+  // each 1/60 s step covers a known stretch of time: a key change inside it splits it, exactly like on the host
+  const keysAt = t => { let k = null; for (const e of moveEv) if (e.t <= t) k = e.k; else break; return k || inp; };
+  try {
+    while (predAcc >= 1 / 60) {
+      PRED.prevX = pp.x; PRED.prevY = pp.y;
+      const end = now - (predAcc - 1 / 60) * 1000, from = end - 1000 / 60;
+      const mid = moveEv.find(e => e.t > from && e.t <= end);
+      if (mid) { const f = (mid.t - from) / (1000 / 60); movePlayer(pp, keysAt(from), f / 60); movePlayer(pp, keysAt(end), (1 - f) / 60); }
+      else movePlayer(pp, keysAt(end), 1 / 60);
+      predAcc -= 1 / 60;
+    }
+  }
   finally { S = saved; }
   PRED.x = pp.x; PRED.y = pp.y; PRED.dir = pp.dir; PRED.walk = pp.walk;
   for (const i of [...PRED.pass]) if (!overlaps(PRED.x, PRED.y, i)) { PRED.pass.delete(i); PRED.world = null; }
@@ -1941,6 +1992,7 @@ function guestUpdate(now, dt) {
     const bb = nearestBomb(iv.b.b, b, 3), ba = bb && nearestBomb(iv.a.b, bb, 1.6);
     return bb && ba ? lerpBomb(ba, bb, iv.f, b) : b;
   });
+  if (PRED && PRED.pend.length) dv.b = (dv.b || view.b).concat(PRED.pend.map(b => [b.i % W, (b.i / W) | 0, Math.max(0.1, FUSE - (now - b.t) / 1000), b.fl, 0, mySlot]));
   return dv;
 }
 
@@ -2118,11 +2170,50 @@ function hostOnData(entry, d) {
     if (!started) renderLobby();
     else if (entry.slot < 0 && !hotJoin(entry)) { entry.open = false; entry.gone = true; conns = conns.filter(c => c !== entry); if (entry.reject) entry.reject('Room is full.'); chatSys(entry.name + ' couldn\'t join: room is full'); }
   }
-  else if (d.t === 'in' && entry.slot >= 0 && d.k) {
-    if (typeof d.k.q === 'number') { if (d.k.q < entry.inQ) return; entry.inQ = d.k.q; } // drop stale, out-of-order input
-    inputs[entry.slot] = d.k;
+  else if (d.t === 'in' && entry.slot >= 0 && Array.isArray(d.ev)) hostOnInput(entry, d, performance.now());
+}
+// ---- replaying a guest's keys with their own timing ----
+// The host plays each guest's key changes back at (guest time + base): base = the guest→host clock offset seen on the
+// fastest messages + a buffer as big as the recent jitter. base only changes while the guest stands still, so the time
+// between pressing and letting go of a key is exactly what the guest had. Snapshots tell each guest which of its own
+// moments the host has reached (ag), so its prediction compares against exactly that moment.
+const REPLAY_WIN = 3000, REPLAY_MIN = 8, REPLAY_MAX = 150;
+function hostOnInput(entry, d, now) {
+  if (typeof d.st === 'number') {
+    const smp = now - d.st, R = entry.rp || (entry.rp = { off: smp, offAt: now, smp: [], q: [], base: null });
+    R.off = Math.min(smp, R.off + (now - R.offAt) * 0.0005); R.offAt = now; // follows slow clock drift upward
+    R.smp.push([now, smp]); while (R.smp.length && R.smp[0][0] < now - REPLAY_WIN) R.smp.shift();
+  }
+  const R = entry.rp; if (!R) return;
+  for (const e of d.ev.slice().sort((a, b) => a[0] - b[0])) {
+    if (!Array.isArray(e) || typeof e[0] !== 'number' || typeof e[1] !== 'number' || !e[2] || typeof e[2] !== 'object') continue;
+    if (e[0] <= entry.inQ) continue; // already have it
+    entry.inQ = e[0]; R.q.push({ gt: e[1], k: e[2] });
   }
 }
+const moving = k => !!(k && (k.up || k.down || k.left || k.right));
+// now: when the coming game step ends. A key change due inside that step splits it (inp.prev for the part before), so
+// the walk lasts exactly as long as on the guest's screen.
+function replayEntry(entry, now) {
+  const R = entry.rp; if (!R || entry.slot < 0) return;
+  if (!R.cur) R.cur = inputs[entry.slot] || {};
+  // standing still with nothing queued: safe moment to adopt a new base (offset + jitter buffer)
+  if (R.base === null || (!moving(R.cur) && !R.q.length)) {
+    const jit = R.smp.length ? Math.max(...R.smp.map(x => x[1])) - R.off : 30;
+    R.base = R.off + Math.max(REPLAY_MIN, Math.min(REPLAY_MAX, jit + 4));
+  }
+  if (R.q.length && R.q[0].gt + R.base > now + 500) R.base = now - R.q[0].gt; // guest clock jumped: catch up
+  const from = now - 1000 / 60; let split = null;
+  while (R.q.length && R.q[0].gt + R.base <= now) {
+    const e = R.q.shift(), u = e.gt + R.base;
+    if (u > from && !split) split = { prev: R.cur, f: (u - from) / (1000 / 60) };
+    R.cur = e.k;
+  }
+  inputs[entry.slot] = split ? Object.assign({}, R.cur, { prev: split.prev, prevF: split.f }) : R.cur;
+  R.ag = now - R.base;
+}
+function replayGuestInputs(now) { for (const c of conns) if (c.open && c.slot >= 0) replayEntry(c, now); }
+
 // Hot join: someone connects while a match is running. Seat order: a seat they left under their name, their old seat
 // if a bot is keeping it, any left seat, a new seat, and finally the last bot's seat (that bot waits on their record
 // as `bumped` and comes back when they leave). Rejoining under the same name gets their score back. They play from
@@ -2146,7 +2237,7 @@ function hotJoin(entry) {
     if (S && S.players[slot]) { S.players[slot].alive = false; S.players[slot].deathT = 9; } // gone, no kill, no animation
     if (S) delete S.bots[slot];
   }
-  entry.slot = slot; inputs[slot] = undefined;
+  entry.slot = slot; inputs[slot] = undefined; if (entry.rp) { entry.rp.q = []; entry.rp.base = null; entry.rp.cur = null; }
   if (S) {
     const now = S.phase === 'count';
     S.players[slot] = makePlayer(slot, now);
@@ -2387,7 +2478,7 @@ function guestOnData(d) {
       : { name: String(p.name), kind: p.bot ? 'bot' : i ? 'guest' : 'host', level: p.bot });
     renderLobby(list, cleanSet(d.set)); lobbyStatus('Waiting for the host to start…');
   }
-  else if (d.t === 'start') { predictReset(); interpReset(); mySlot = d.slot; joinedLate = !!d.late; localIn[0].bombSeq = 0; localIn[0].teleSeq = 0; localIn[0].detSeq = 0; lastSent = ''; lastSnapQ = -1; lastSnapAt = performance.now(); view = null; enterGame(); sendGuestInput(); }
+  else if (d.t === 'start') { predictReset(); interpReset(); mySlot = d.slot; joinedLate = !!d.late; localIn[0].bombSeq = 0; localIn[0].teleSeq = 0; localIn[0].detSeq = 0; lastSent = ''; inHist = []; moveEv = []; lastSnapQ = -1; lastSnapAt = performance.now(); view = null; enterGame(); sendGuestInput(); }
   else if (d.t === 's') {
     if (d.ev) playEvents(d.ev);
     if (typeof d.q === 'number') { if (d.q <= lastSnapQ) return; lastSnapQ = d.q; } // an older snapshot arrived late: skip it
