@@ -88,13 +88,14 @@
 
   /* ---- chat (online: lobby and game) ---- */
   :root{--chatW:clamp(170px,18vw,260px)}
-  #chat{display:none;position:fixed;left:16px;top:16px;bottom:16px;width:var(--chatW);flex-direction:column;gap:6px;z-index:6;font-size:9px}
+  #chat{display:none;position:fixed;left:16px;top:16px;bottom:16px;width:var(--chatW);flex-direction:column;gap:6px;z-index:6;font-family:system-ui,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;font-size:13px}
   body.chatOn{padding-left:calc(var(--chatW) + 28px);padding-right:calc(var(--chatW) + 28px)}
   body.chatOn #chat{display:flex}
-  #chatLog{flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:6px;background:rgba(20,27,47,.7);border:3px solid var(--line);border-radius:8px;padding:8px;line-height:1.7;overflow-wrap:anywhere;scrollbar-color:var(--line) transparent}
+  #chatLog{flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:6px;background:rgba(20,27,47,.7);border:3px solid var(--line);border-radius:8px;padding:8px;line-height:1.4;overflow-wrap:anywhere;scrollbar-color:var(--line) transparent}
   #chatLog .ln:first-child{margin-top:auto}
-  #chatLog .sys{color:var(--dim)}
-  #chatIn{font-size:9px;padding:9px 8px;border-width:3px}
+  #chatLog .sys{color:var(--dim);font-style:italic}
+  #chatLog .ln span:first-child{font-weight:700}
+  #chatIn{font-family:inherit;font-size:13px;padding:8px;border-width:3px}
   #chatBtn{display:none;width:auto;margin:0;padding:6px 8px;font-size:12px;background:rgba(20,27,47,.85);border:2px solid var(--line);box-shadow:none;align-self:flex-start;pointer-events:auto}
   /* phones and narrow windows: a few recent lines over the top-left corner, 💬 to type */
   @media (max-width: 900px){ body.chatOn{padding-left:16px;padding-right:16px} }
