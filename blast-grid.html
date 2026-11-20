@@ -84,6 +84,37 @@
   .pu-r span:last-child{color:var(--dim)}
   .pu-i .emo{font-size:16px}
 
+  /* ---- chat (online: lobby and game) ---- */
+  :root{--chatW:clamp(170px,18vw,260px)}
+  #chat{display:none;position:fixed;left:16px;top:16px;bottom:16px;width:var(--chatW);flex-direction:column;gap:6px;z-index:6;font-size:9px}
+  body.chatOn{padding-left:calc(var(--chatW) + 28px);padding-right:calc(var(--chatW) + 28px)}
+  body.chatOn #chat{display:flex}
+  #chatLog{flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:6px;background:rgba(20,27,47,.7);border:3px solid var(--line);border-radius:8px;padding:8px;line-height:1.7;overflow-wrap:anywhere;scrollbar-color:var(--line) transparent}
+  #chatLog .ln:first-child{margin-top:auto}
+  #chatLog .sys{color:var(--dim)}
+  #chatIn{font-size:9px;padding:9px 8px;border-width:3px}
+  #chatBtn{display:none;width:auto;margin:0;padding:6px 8px;font-size:12px;background:rgba(20,27,47,.85);border:2px solid var(--line);box-shadow:none;align-self:flex-start;pointer-events:auto}
+  /* phones and narrow windows: a few recent lines over the top-left corner, 💬 to type */
+  @media (max-width: 900px){ body.chatOn{padding-left:16px;padding-right:16px} }
+  body.touch.chatOn{padding-left:16px;padding-right:16px}
+  body.touch.ingame.chatOn{padding:0}
+  @media (max-width: 900px){
+    #chat{top:44px;bottom:auto;left:6px;width:min(46vw,280px);pointer-events:none}
+    #chatLog{max-height:30vh;background:transparent;border:none;padding:0 4px;text-shadow:0 1px 0 #000,0 0 3px #000}
+    body:not(.chatTyping) #chatLog .ln:not(:nth-last-child(-n+4)){display:none}
+    body:not(.chatTyping) #chatIn{display:none}
+    body.chatTyping #chatLog{background:rgba(20,27,47,.9);padding:6px}
+    #chatIn{pointer-events:auto}
+    #chatBtn{display:block}
+  }
+  body.touch #chat{top:44px;bottom:auto;left:6px;width:min(46vw,280px);pointer-events:none}
+  body.touch #chatLog{max-height:30vh;background:transparent;border:none;padding:0 4px;text-shadow:0 1px 0 #000,0 0 3px #000}
+  body.touch:not(.chatTyping) #chatLog .ln:not(:nth-last-child(-n+4)){display:none}
+  body.touch:not(.chatTyping) #chatIn{display:none}
+  body.touch.chatTyping #chatLog{background:rgba(20,27,47,.9);padding:6px}
+  body.touch #chatIn{pointer-events:auto}
+  body.touch #chatBtn{display:block}
+
   /* ---- touch (phones held sideways) ---- */
   #touch,#tbar,#rotate{display:none}
   body.touch input{font-size:16px} /* stops phones zooming in on focus */
@@ -186,7 +217,7 @@
   <h1 style="font-size:22px">CONTROLS</h1>
   <div class="hint" style="margin-top:0;text-align:center">Click a key, then press the new one (ESC cancels).<br>Saved in this browser only — your colleague sets their own.</div>
   <div class="kgrid" id="kgrid"></div>
-  <div class="hint">Online and vs bots: both columns control your player. Same keyboard: left column is P1, right column is P2.<br>M (sound) and R (rematch) are reserved.<br>On a phone: hold it sideways — on-screen stick on the left, BOMB / TELE / DET on the right.</div>
+  <div class="hint">Online and vs bots: both columns control your player. Same keyboard: left column is P1, right column is P2.<br>M (sound), R (rematch) and T (chat) are reserved.<br>On a phone: hold it sideways — on-screen stick on the left, BOMB / TELE / DET on the right.</div>
   <div class="status" id="keysStatus"></div>
   <div class="row"><button id="btnKeysReset" class="ghost">RESET DEFAULTS</button><button id="btnKeysDone" style="flex:1">DONE</button></div>
 </div>
@@ -239,6 +270,7 @@
     <div id="tBtns"><button id="tTele">TELE</button><button id="tDet">DET</button><button id="tBomb">BOMB</button></div>
   </div>
 </div>
+<div id="chat"><button id="chatBtn" title="Chat (T)">💬</button><div id="chatLog"></div><input id="chatIn" maxlength="120" placeholder="T to chat · Enter to send" autocomplete="off"></div>
 <div id="rotate"><i class="emo">📱↻</i>TURN YOUR PHONE SIDEWAYS<br>to keep playing</div>
 
 <script>
@@ -256,7 +288,7 @@ const COLORS = ['#f8fafc', '#38bdf8', '#fb7185', '#a3e635'];
 const DARK   = ['#94a3b8', '#0369a1', '#be123c', '#4d7c0f'];
 const spawnPoints = () => [[1, 1], [W - 2, H - 2], [W - 2, 1], [1, H - 2]];
 const FUSE = 2.4, FLAME_T = 0.55, WIN_TARGET = 3, MAX_PLAYERS = 4;
-const ID_PREFIX = 'blastgrid-v6-'; // bump when the network format changes so old and new versions don't mix
+const ID_PREFIX = 'blastgrid-v7-'; // bump when the network format changes so old and new versions don't mix
 const idx = (x, y) => y * W + x;
 const $ = s => document.querySelector(s);
 
@@ -1086,7 +1118,7 @@ const DEFAULT_KEYS = {
   b: { up: ['ArrowUp'], down: ['ArrowDown'], left: ['ArrowLeft'], right: ['ArrowRight'], bomb: ['Enter', 'NumpadEnter', 'Numpad0'], tele: ['ShiftRight', 'ControlRight', 'Numpad1'], det: ['Slash', 'Numpad2', 'Period'] },
 };
 const ACTIONS = [['up', 'UP'], ['down', 'DOWN'], ['left', 'LEFT'], ['right', 'RIGHT'], ['bomb', 'BOMB'], ['tele', 'TELEPORT'], ['det', 'DETONATE']];
-const RESERVED = ['KeyM', 'KeyR', 'Escape', 'Tab', 'F5'];
+const RESERVED = ['KeyM', 'KeyR', 'KeyT', 'Escape', 'Tab', 'F5'];
 const KEYMAP = JSON.parse(JSON.stringify(DEFAULT_KEYS));
 try {
   const saved = JSON.parse(localStorage.getItem('bg-keys') || 'null');
@@ -1191,7 +1223,11 @@ let muted = false;
 try { muted = localStorage.getItem('bg-mute') === '1'; } catch (e) { }
 addEventListener('keydown', e => {
   unlockAudio();
-  if (e.target.tagName === 'INPUT') { if (e.code === 'Enter') { if (e.target.id === 'code') $('#btnJoin').click(); } return; }
+  if (e.target.tagName === 'INPUT') {
+    if (e.target.id === 'chatIn') { if (e.code === 'Enter' || e.code === 'NumpadEnter') { e.preventDefault(); chatSend(e.target.value); e.target.value = ''; e.target.blur(); } else if (e.code === 'Escape') e.target.blur(); return; }
+    if (e.code === 'Enter') { if (e.target.id === 'code') $('#btnJoin').click(); } return;
+  }
+  if (e.code === 'KeyT' && !e.repeat && chatOn()) { e.preventDefault(); chatOpen(); return; }
   if (!started) return;
   if (e.code === 'Tab') { e.preventDefault(); boardHeld = true; return; }
   if (e.code === 'KeyM' && !e.repeat) { toggleMute(); return; }
@@ -1720,6 +1756,7 @@ function esc(s) { return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<'
 let lastT = performance.now(), acc = 0, hostTicks = 0;
 function simStep() {
   const now = performance.now(), dt = Math.min(0.25, (now - lastT) / 1000); lastT = now;
+  chatTick(now);
   if ((mode === 'local' || mode === 'host') && started && S) {
     readLocalInputs();
     acc += dt;
@@ -1986,6 +2023,7 @@ function show(id) {
   document.body.classList.toggle('ingame', id === 'game');
   const vp = document.querySelector('meta[name="viewport"]'); // pinch-zoom only locked while playing
   if (vp) vp.setAttribute('content', id === 'game' ? VIEWPORT + ',maximum-scale=1,user-scalable=no' : VIEWPORT);
+  document.body.classList.toggle('chatOn', (id === 'lobby' || id === 'game') && (mode === 'host' || mode === 'guest'));
   if (id !== 'game') clearTouch(); for (const s of ['menu', 'keys', 'pups', 'scores', 'lobby', 'game']) $('#' + s).classList.toggle('hidden', s !== id); }
 function getName() {
   const n = ($('#name').value.trim() || 'Player').slice(0, 12);
@@ -2000,7 +2038,7 @@ function resetAll() {
   conns.forEach(c => { try { c.conn.close(); } catch (e) { } }); conns = [];
   if (hostConn) { try { hostConn.close(); } catch (e) { } hostConn = null; }
   if (peer) { try { peer.destroy(); } catch (e) { } peer = null; }
-  predictReset(); interpReset(); keys.clear(); inputs = []; myPing = 0; myRelay = false; joinedLate = false; lastSnapQ = -1;
+  chatReset(); predictReset(); interpReset(); keys.clear(); inputs = []; myPing = 0; myRelay = false; joinedLate = false; lastSnapQ = -1;
   const n = $('#net'); if (n) n.textContent = '';
 }
 function toMenu(msg) { resetAll(); show('menu'); menuStatus(msg); }
@@ -2050,7 +2088,7 @@ function startHostPeer(tries = 0) {
     if (mode === 'host') lobbyStatus(peerErrorText(err));
   });
   peer.on('connection', conn => {
-    const entry = { conn, name: 'Guest', slot: -1, open: false, inQ: 0, ping: 0 };
+    const entry = { conn, name: 'Guest', slot: -1, open: false, inQ: 0, ping: 0, chatAck: Math.max(0, CHAT.seq - CHAT_HISTORY), sayId: 0 };
     const reject = why => { conn.send({ t: 'reject', why }); setTimeout(() => conn.close(), 300); };
     conn.on('open', () => {
       if (!started && !makeRoomForGuest()) { reject('Room is full.'); return; }
@@ -2070,10 +2108,13 @@ function hostOnData(entry, d) {
   if (d.t === 'bye') { try { conn.close(); } catch (e) { } dropConn(entry); return; }
   if (onPing(conn, d)) return;
   if (d.t === 'pong') { entry.ping = performance.now() - d.c; return; }
+  if (d.t === 'say') { hostOnSay(entry, d); return; }
+  if (d.t === 'cack') { if (typeof d.s === 'number') entry.chatAck = Math.max(entry.chatAck, d.s); return; }
   if (d.t === 'hello') {
     entry.name = String(d.name || 'Guest').slice(0, 12);
+    if (!entry.hello) { entry.hello = true; chatSys(entry.name + ' joined'); }
     if (!started) renderLobby();
-    else if (entry.slot < 0 && !hotJoin(entry)) { entry.open = false; conns = conns.filter(c => c !== entry); if (entry.reject) entry.reject('Room is full.'); }
+    else if (entry.slot < 0 && !hotJoin(entry)) { entry.open = false; entry.gone = true; conns = conns.filter(c => c !== entry); if (entry.reject) entry.reject('Room is full.'); chatSys(entry.name + ' couldn\'t join: room is full'); }
   }
   else if (d.t === 'in' && entry.slot >= 0 && d.k) {
     if (typeof d.k.q === 'number') { if (d.k.q < entry.inQ) return; entry.inQ = d.k.q; } // drop stale, out-of-order input
@@ -2118,6 +2159,7 @@ function hotJoin(entry) {
 function dropConn(entry) {
   if (entry.gone) return; entry.gone = true;
   entry.open = false; conns = conns.filter(c => c !== entry);
+  if (entry.hello) chatSys(entry.name + ' left');
   const pl = started && entry.slot >= 0 && M && M.players[entry.slot];
   if (pl && pl.bumped) {
     const bot = pl.bumped; delete pl.bumped;
@@ -2219,6 +2261,94 @@ $('#btnCopy').onclick = () => {
 $('#btnLeave').onclick = () => toMenu('');
 $('#btnQuit').onclick = () => { if (confirm('Quit to the main menu?')) toMenu(''); };
 
+// ---- Chat (online) ----
+// The channel is unreliable, so chat has its own small delivery layer. Guests send one line at a time ('say' with an
+// id) and resend it until the host answers 'sack'. The host keeps the log, numbers every line (seq) and sends each guest
+// the lines past what it acknowledged ('chat' → 'cack'), resending until acked; guests add lines strictly in seq order.
+const CHAT_MAX = 120, CHAT_KEEP = 100, CHAT_HISTORY = 20, CHAT_RESEND = 400;
+const CHAT = { seq: 0, log: [], got: -1, out: [], nextId: 1, sentAt: 0, last: 0 };
+function chatReset() {
+  CHAT.seq = 0; CHAT.log = []; CHAT.got = -1; CHAT.out = []; CHAT.nextId = 1; CHAT.sentAt = 0; CHAT.last = 0;
+  const el = $('#chatLog'); if (el) el.innerHTML = '';
+  document.body.classList.remove('chatTyping');
+}
+function chatOn() { return document.body.classList.contains('chatOn'); }
+function chatOpen() {
+  keys.clear(); clearTouch(); boardHeld = false; sendGuestInput(); // stop walking while typing
+  const i = $('#chatIn'); if (i && i.focus) i.focus();
+}
+const chatClean = m => String(m == null ? '' : m).replace(/\s+/g, ' ').trim().slice(0, CHAT_MAX);
+// colour of a guest's name: its seat in a match, its lobby position otherwise
+function chatColor(entry) {
+  const i = entry ? (entry.slot >= 0 ? entry.slot : 1 + conns.filter(c => c.open).indexOf(entry)) : 0;
+  return i >= 0 && i < COLORS.length ? i : 0;
+}
+function chatShow(line) {
+  const el = $('#chatLog'); if (!el || !document.createElement) return;
+  const d = document.createElement('div'); d.className = 'ln' + (line.sys ? ' sys' : '');
+  if (line.sys) d.textContent = line.m;
+  else {
+    const n = document.createElement('span'); n.style.color = COLORS[line.c] || COLORS[0]; n.textContent = line.n + ': ';
+    const m = document.createElement('span'); m.textContent = line.m;
+    d.appendChild(n); d.appendChild(m);
+  }
+  el.appendChild(d);
+  while (el.children && el.children.length > CHAT_KEEP && el.removeChild) el.removeChild(el.children[0]);
+  el.scrollTop = 1e9;
+}
+// host: add a line to the log and push it out
+function chatAdd(line) {
+  line.s = ++CHAT.seq; CHAT.log.push(line);
+  if (CHAT.log.length > CHAT_KEEP) CHAT.log.shift();
+  chatShow(line); chatPush(performance.now(), true);
+}
+function chatSys(m) { if (mode === 'host') chatAdd({ sys: 1, m }); }
+function chatSend(text) {
+  const m = chatClean(text); if (!m) return;
+  if (mode === 'host') chatAdd({ n: myName, c: 0, m });
+  else if (mode === 'guest') { CHAT.out.push({ id: CHAT.nextId++, m }); CHAT.sentAt = 0; chatTick(performance.now()); }
+}
+function hostOnSay(entry, d) {
+  if (typeof d.id !== 'number') return;
+  if (d.id === entry.sayId + 1) { entry.sayId = d.id; const m = chatClean(d.m); if (m) chatAdd({ n: entry.name, c: chatColor(entry), m }); }
+  if (d.id <= entry.sayId) entry.conn.send({ t: 'sack', id: d.id });
+}
+function guestOnChat(d) {
+  const lines = Array.isArray(d.l) ? d.l.filter(x => x && typeof x.s === 'number').sort((a, b) => a.s - b.s) : [];
+  if (!lines.length) return;
+  if (CHAT.got < 0) CHAT.got = lines[0].s - 1;
+  for (const x of lines) if (x.s === CHAT.got + 1) {
+    CHAT.got = x.s;
+    const line = { s: x.s, sys: x.sys ? 1 : 0, n: chatClean(x.n).slice(0, 12), c: +x.c || 0, m: chatClean(x.m) };
+    CHAT.log.push(line); if (CHAT.log.length > CHAT_KEEP) CHAT.log.shift();
+    chatShow(line);
+  }
+  hostConn.send({ t: 'cack', s: CHAT.got });
+}
+// host: send every guest the lines it hasn't acknowledged (now, or on the resend timer)
+function chatPush(now, force) {
+  for (const c of conns) {
+    if (!c.open || !c.conn.open || c.chatAck >= CHAT.seq) continue;
+    if (!force && now - (c.chatAt || 0) < CHAT_RESEND) continue;
+    c.chatAt = now;
+    const l = CHAT.log.filter(x => x.s > c.chatAck).slice(0, CHAT_HISTORY);
+    if (l.length) try { c.conn.send({ t: 'chat', l }); } catch (e) { }
+  }
+}
+function chatTick(now) {
+  if (mode === 'host') chatPush(now, false);
+  else if (mode === 'guest' && CHAT.out.length && hostConn && hostConn.open && now - CHAT.sentAt >= CHAT_RESEND) {
+    CHAT.sentAt = now; const o = CHAT.out[0];
+    try { hostConn.send({ t: 'say', id: o.id, m: o.m }); } catch (e) { }
+  }
+}
+{
+  const i = $('#chatIn');
+  i.addEventListener('focus', () => { document.body.classList.add('chatTyping'); keys.clear(); clearTouch(); sendGuestInput(); });
+  i.addEventListener('blur', () => document.body.classList.remove('chatTyping'));
+  $('#chatBtn').onclick = e => { if (e && e.preventDefault) e.preventDefault(); if (document.body.classList.contains('chatTyping')) i.blur(); else chatOpen(); };
+}
+
 // ---- Guest ----
 $('#btnJoin').onclick = () => {
   unlockAudio();
@@ -2246,6 +2376,8 @@ function guestOnData(d) {
   if (!d || typeof d !== 'object') return;
   if (onPing(hostConn, d)) return;
   if (d.t === 'pong') { const r = performance.now() - d.c; myPing = myPing ? myPing * 0.6 + r * 0.4 : r; return; }
+  if (d.t === 'chat') { guestOnChat(d); return; }
+  if (d.t === 'sack') { if (CHAT.out.length && CHAT.out[0].id === d.id) { CHAT.out.shift(); CHAT.sentAt = 0; } return; }
   if (d.t === 'reject') toMenu(d.why);
   else if (d.t === 'bye') toMenu('The host closed the game.');
   else if (d.t === 'lobby') {
