@@ -61,3 +61,19 @@ test('a predicted bomb the host refuses goes away', () => {
   assert.strictEqual(link.guest.run('__dv.b.filter(b => b[5] === 1).length'), 0);
   assert.strictEqual(link.host.run('S.bombs.length'), 0);
 });
+
+test('bombs dropped while walking never blink out and back', () => {
+  const link = ready({ seed: 1, latency: [30, 150] });
+  link.host.run('S.players[1].maxBombs = 5; S.players[1].hp = 99; S.players[1].inv = 99;');
+  link.press('KeyA');
+  const first = new Map(), gone = new Set(); let t = 0, blinks = 0;
+  link.step(2000, l => {
+    tickGuest(l); t += 1000 / 60;
+    if (Math.floor(t / 300) !== Math.floor((t - 1000 / 60) / 300)) l.guest.run('localIn[0].bombSeq++; sendGuestInput();');
+    const shown = new Set(JSON.parse(l.guest.run("JSON.stringify(__dv.b.filter(b => b[5] === 1).map(b => Math.round(b[0]) + ',' + Math.round(b[1])))")));
+    for (const k of shown) { if (!first.has(k)) first.set(k, t); if (gone.has(k)) { blinks++; gone.delete(k); } }
+    for (const [k, t0] of first) if (!shown.has(k) && t - t0 < 2000) gone.add(k); // before its fuse is up
+  });
+  assert.ok(first.size >= 4, 'placed ' + first.size);
+  assert.strictEqual(blinks, 0);
+});
