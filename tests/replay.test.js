@@ -96,3 +96,50 @@ test("someone else's bomb doesn't show before their character gets there", () =>
     assert.ok(worst < 0.62, `seed ${seed}: a bomb showed ${worst.toFixed(2)} tiles ahead of its owner`);
   }
 });
+
+// time (ms on the shared clock) at which the bomb on tile x of `slot` goes off: on the host's board / on the guest's screen
+function bombTimes(link, x) {
+  let hostT = null, guestT = null, hadHost = false; const fuses = [];
+  link.step(3500, l => {
+    tickGuest(l);
+    const onHost = l.host.run(`S.bombs.some(b => b.owner === 1 && b.x === ${x})`);
+    if (onHost) hadHost = true; else if (hadHost && hostT === null) hostT = l.now();
+    const g = JSON.parse(l.guest.run(`JSON.stringify((__dv.b.find(b => b[5] === 1 && Math.round(b[0]) === ${x}) || [])[2] ?? null)`));
+    if (g !== null) fuses.push(g);
+    if (guestT === null && l.guest.run(`(view.f || []).some(f => f[0] % W === ${x})`)) guestT = l.now();
+  });
+  return { hostT, guestT, fuses };
+}
+
+test('a guest bomb goes off fuse-time after the key press on both screens', () => {
+  for (const [seed, lo, hi] of [[1, 50, 50], [2, 30, 90], [3, 20, 40]]) {
+    const link = ready({ seed, latency: [lo, hi] });
+    link.host.run(`GUEST.ping = ${lo + hi}`); // the round trip the host measures (its ping timer doesn't run here)
+    link.press('KeyA'); link.step(250, tickGuest); link.release('KeyA'); link.step(100, tickGuest);
+    const x = link.guest.run('Math.round(PRED.x)');
+    link.guest.run('localIn[0].bombSeq++; sendGuestInput();');
+    const P = link.now();
+    link.press('KeyD'); link.step(300, tickGuest); link.release('KeyD'); // get out of the way
+    const { hostT, guestT } = bombTimes(link, x);
+    assert.ok(hostT !== null && guestT !== null, `seed ${seed}: exploded`);
+    const want = P + 2400;
+    assert.ok(Math.abs(hostT - want) < 45, `seed ${seed}: host off by ${(hostT - want).toFixed(0)} ms`);
+    assert.ok(guestT - want < hi + 45 && guestT >= want - 20, `seed ${seed}: guest screen off by ${(guestT - want).toFixed(0)} ms`);
+  }
+});
+
+test('bomb fuses count down smoothly on the guest screen', () => {
+  const link = ready({ seed: 4, latency: [30, 150] });
+  link.host.run('placeOne(S.players[0], 1, H - 2)'); // the host's bomb, seen by the guest
+  const fuses = [];
+  link.step(2000, l => {
+    tickGuest(l);
+    const f = l.guest.run('(__dv.b.find(b => b[5] === 0) || [])[2]');
+    if (typeof f === 'number') fuses.push(f);
+  });
+  assert.ok(fuses.length > 60, 'shown ' + fuses.length);
+  let ups = 0, stalls = 0;
+  for (let k = 1; k < fuses.length; k++) { if (fuses[k] > fuses[k - 1] + 1e-9) ups++; if (fuses[k] === fuses[k - 1] && fuses[k] > 0) stalls++; }
+  assert.strictEqual(ups, 0, 'fuse went back up');
+  assert.ok(stalls < fuses.length * 0.1, `fuse stood still on ${stalls} of ${fuses.length} frames`);
+});
