@@ -41,6 +41,30 @@ test('a bomb lands on the tile you were on when you pressed', () => {
   }
 });
 
+// Pressing just as you cross the middle between two tiles: the guest shows the bomb at its last frame's position, the
+// host would place it at the end of its game step — a frame or two apart, which can round to different tiles.
+test('a bomb pressed while crossing between two tiles lands where the guest showed it', () => {
+  for (const frameMs of [1000 / 60, 1000 / 144]) for (let seed = 1; seed <= 8; seed++) {
+    const link = ready({ seed, latency: [70, 110], frameMs });
+    const key = seed % 2 ? 'KeyD' : 'KeyA', dir = seed % 2 ? 1 : -1;
+    link.host.run('S.players[1].x = Math.round(W / 2)'); link.step(300, tickGuest);
+    link.press(key);
+    // walk until the next frame would carry us past the middle of the tile
+    for (let n = 0; n < 200; n++) {
+      link.step(frameMs, tickGuest);
+      const f = link.guest.run('PRED.x') * dir + 100, frac = f - Math.floor(f);
+      if (frac > 0.42 && frac < 0.5) break;
+    }
+    const shown = link.guest.run('Math.round(PRED.x)');
+    link.guest.run('localIn[0].bombSeq++; sendGuestInput();');
+    link.step(frameMs, tickGuest);
+    assert.ok(link.guest.run(`__dv.b.some(b => b[5] === 1 && Math.round(b[0]) === ${shown})`), `seed ${seed}: shown at once`);
+    link.step(500, tickGuest);
+    const hostAt = JSON.parse(link.host.run('JSON.stringify(S.bombs.filter(b => b.owner === 1).map(b => b.x))'));
+    assert.deepStrictEqual(hostAt, [shown], `${Math.round(1000 / frameMs)} Hz seed ${seed}: host bomb tile`);
+  }
+});
+
 test('a lost key-up message does not leave you walking', () => {
   const link = ready({ seed: 3, latency: [40, 60] });
   const toH = link.guest.ctx.__sendToHost;
