@@ -309,6 +309,18 @@ let netSeq = 0, lastSnapQ = -1, lastSnapAt = 0, inSeq = 0, myPing = 0, myRelay =
 // Online messages go over an UNORDERED (but still delivered) channel with JSON encoding: a single lost packet no
 // longer holds back every later snapshot, and JSON is much cheaper to encode than PeerJS's default binary packer.
 const CONN_OPTS = { reliable: false, serialization: 'json' };
+// How two browsers find a path to each other. STUN tells each one its public address for a direct link; TURN relays
+// the game when no direct link is possible (Wi-Fi that blocks device-to-device traffic, strict firewalls).
+// PeerJS's built-in TURN servers no longer exist, so we bring our own. Leave username empty to run without a relay.
+const TURN = {
+  urls: ['turn:global.relay.metered.ca:80', 'turn:global.relay.metered.ca:80?transport=tcp',
+    'turn:global.relay.metered.ca:443', 'turns:global.relay.metered.ca:443?transport=tcp'],
+  username: '', credential: '',
+};
+const PEER_OPTS = { config: { iceServers: [
+  { urls: ['stun:stun.l.google.com:19302', 'stun:stun.cloudflare.com:3478'] },
+  ...(TURN.username ? [TURN] : []),
+] } };
 let myName = 'Player';
 try { myName = localStorage.getItem('bg-name') || 'Player'; } catch (e) {}
 $('#name').value = myName === 'Player' ? '' : myName;
@@ -2154,7 +2166,7 @@ $('#btnHost').onclick = () => {
 };
 function startHostPeer(tries = 0) {
   const code = genCode();
-  peer = new Peer(ID_PREFIX + code);
+  peer = new Peer(ID_PREFIX + code, PEER_OPTS);
   peer.on('open', () => { $('#roomCode').textContent = code; lobbyStatus(''); });
   peer.on('error', err => {
     if (err.type === 'unavailable-id' && tries < 5) { peer.destroy(); startHostPeer(tries + 1); return; }
@@ -2465,25 +2477,27 @@ function chatTick(now) {
 }
 
 // ---- Guest ----
+const NO_LINK = 'Could not connect to the host. Your network may block players from linking up — try a phone hotspot.';
 $('#btnJoin').onclick = () => {
   unlockAudio();
   const code = $('#code').value.trim().toUpperCase();
   if (!code) { menuStatus('Type the room code your colleague gave you.'); return; }
   if (typeof Peer === 'undefined') { menuStatus('Online library failed to load — check your internet connection.'); return; }
   resetAll(); mode = 'guest'; getName(); menuStatus('Connecting…');
-  peer = new Peer();
+  peer = new Peer(PEER_OPTS);
   peer.on('error', err => { if (mode === 'guest') toMenu(peerErrorText(err)); });
   peer.on('open', () => {
     hostConn = peer.connect(ID_PREFIX + code, CONN_OPTS);
-    const timeout = setTimeout(() => { if (mode === 'guest' && !(hostConn && hostConn.open)) toMenu('Could not connect. The host may be behind a strict firewall — try another network.'); }, 15000);
+    let opened = false;
+    const timeout = setTimeout(() => { if (mode === 'guest' && !(hostConn && hostConn.open)) toMenu(NO_LINK); }, 15000);
     hostConn.on('open', () => {
-      clearTimeout(timeout);
+      opened = true; clearTimeout(timeout);
       hostConn.send({ t: 'hello', name: myName });
       show('lobby'); renderLobby([{ name: '…', kind: 'host' }, { name: myName, kind: 'guest' }]);
       lobbyStatus(''); menuStatus('');
     });
     hostConn.on('data', guestOnData);
-    hostConn.on('close', () => { if (mode === 'guest') toMenu('The host closed the game.'); });
+    hostConn.on('close', () => { if (mode === 'guest') toMenu(opened ? 'The host closed the game.' : NO_LINK); });
   });
 };
 // A message from the host
