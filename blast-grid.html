@@ -597,9 +597,14 @@ function usePortal(p) {
   for (const b of S.bombs) if (Math.abs(p.x - b.x) < 0.98 && Math.abs(p.y - b.y) < 0.98) b.pass.add(p.slot);
 }
 
-function placeBomb(p, late = 0) {
+// at: the tile a guest showed the bomb on (see sendGuestInput); used when the player really is on that tile
+function placeBomb(p, late = 0, at) {
   if (p.curse === 'nobomb') return;
-  const x = Math.round(p.x), y = Math.round(p.y);
+  let x = Math.round(p.x), y = Math.round(p.y);
+  if (Number.isInteger(at) && at >= 0 && at < W * H) {
+    const ax = at % W, ay = (at / W) | 0;
+    if (Math.abs(p.x - ax) < 0.98 && Math.abs(p.y - ay) < 0.98) { x = ax; y = ay; }
+  }
   if (p.glove) { // throw the bomb you're on, or the one right in front of you
     const [dx, dy] = DIRV[p.dir];
     const b = S.bombs.find(q => !q.dead && !q.fly && !q.mine && q.x === x && q.y === y)
@@ -723,7 +728,7 @@ function tick(dt) {
     if (p.softT > 0) { p.softT -= dt; if (p.softT <= 0) { p.softT = 0; unstick(p); } }
     if (inp.prev && inp.prevF > 0) { movePlayer(p, inp.prev, dt * inp.prevF); movePlayer(p, inp, dt * (1 - inp.prevF)); }
     else movePlayer(p, inp, dt);
-    if (inp.bombSeq !== undefined && inp.bombSeq !== p.lastSeq) { p.lastSeq = inp.bombSeq; placeBomb(p, inp.late || 0); }
+    if (inp.bombSeq !== undefined && inp.bombSeq !== p.lastSeq) { p.lastSeq = inp.bombSeq; placeBomb(p, inp.late || 0, inp.bt); }
     if (inp.teleSeq !== undefined && inp.teleSeq !== p.lastTele) { p.lastTele = inp.teleSeq; teleport(p); }
     if (inp.detSeq !== undefined && inp.detSeq !== p.lastDet) { p.lastDet = inp.detSeq; detonate(p); }
     if (p.curse === 'auto') { p.autoT -= dt; if (p.autoT <= 0) { p.autoT = 0.6; placeBomb(p); } }
@@ -1186,11 +1191,15 @@ function dirState(li) {
 // Each change of keys is sent with the time it happened on this screen (gt), so the host can replay them with the same
 // gaps between them — network jitter then can't change how long you walked. The last few changes go in every message
 // and are resent every 100 ms, so a lost message (say, letting go of a key) is made up for quickly.
+// A bomb press also says which tile we're showing the bomb on (bt): we draw it from our last frame, the host would
+// place it at the end of its game step, and when you press while crossing between two tiles those round differently.
 let inHist = [], inSentAt = 0, moveEv = []; // moveEv: [{ t, k }] when our keys changed, for the prediction
+let bombAtSeq = 0;
 function sendGuestInput(force) {
   if (mode !== 'guest' || !hostConn || !hostConn.open) return;
   const st = dirState(0), now = performance.now();
-  const k = { up: st.up, down: st.down, left: st.left, right: st.right, pri: st.pri, bombSeq: st.bombSeq, teleSeq: st.teleSeq, detSeq: st.detSeq };
+  if (st.bombSeq !== bombAtSeq) { bombAtSeq = st.bombSeq; st.bombAt = PRED ? idx(Math.round(PRED.x), Math.round(PRED.y)) : undefined; }
+  const k = { up: st.up, down: st.down, left: st.left, right: st.right, pri: st.pri, bombSeq: st.bombSeq, teleSeq: st.teleSeq, detSeq: st.detSeq, bt: st.bombAt };
   const s = JSON.stringify(k);
   if (s !== lastSent) {
     lastSent = s; const t = +now.toFixed(1); inHist.push([++inSeq, t, k]); if (inHist.length > 4) inHist.shift();
@@ -1902,9 +1911,9 @@ function predictOnSnapshot(d, now) {
   }
 }
 // show our own plain bomb the moment we press the key (gloves, mines and line bombs wait for the host)
-function predictBomb(v, now) {
+function predictBomb(v, now, at) {
   const p = v.p[mySlot]; if (!p || p[16] === 'nobomb' || (p[19] & 1) || p[20] > 0 || (p[12] & 8)) return;
-  const x = Math.round(PRED.x), y = Math.round(PRED.y), i = idx(x, y);
+  const i = Number.isInteger(at) ? at : idx(Math.round(PRED.x), Math.round(PRED.y));
   if (v.g[i] !== '.' || PRED.known.has(i) || (v.po || []).some(([a, b]) => a === i || b === i)) return;
   if (v.b.filter(b => b[5] === mySlot && !(b[3] & 8)).length + PRED.pend.length >= p[6]) return;
   PRED.pend.push({ i, t: now, fl: p[12] & 3 });
@@ -1915,7 +1924,7 @@ function predictStep(now, dt) {
   if (!PRED || !predictable(v)) { PRED = null; return; }
   const inp = dirState(0);
   if (inp.up || inp.down || inp.left || inp.right) PRED.lastInput = now;
-  if (inp.bombSeq !== PRED.bombSeq) { PRED.bombSeq = inp.bombSeq; predictBomb(v, now); }
+  if (inp.bombSeq !== PRED.bombSeq) { PRED.bombSeq = inp.bombSeq; predictBomb(v, now, inp.bombAt); }
   if (!PRED.world) PRED.world = predWorld(v);
   const pp = predPlayer(v), saved = S;
   predAcc = Math.min(0.25, predAcc + dt);
@@ -2514,7 +2523,7 @@ function guestOnData(d) {
       : { name: String(p.name), kind: p.bot ? 'bot' : i ? 'guest' : 'host', level: p.bot });
     renderLobby(list, cleanSet(d.set)); lobbyStatus('Waiting for the host to start…');
   }
-  else if (d.t === 'start') { predictReset(); interpReset(); mySlot = d.slot; joinedLate = !!d.late; localIn[0].bombSeq = 0; localIn[0].teleSeq = 0; localIn[0].detSeq = 0; lastSent = ''; inHist = []; moveEv = []; lastSnapQ = -1; lastSnapAt = performance.now(); view = null; enterGame(); sendGuestInput(); }
+  else if (d.t === 'start') { predictReset(); interpReset(); mySlot = d.slot; joinedLate = !!d.late; localIn[0].bombSeq = 0; localIn[0].bombAt = undefined; bombAtSeq = 0; localIn[0].teleSeq = 0; localIn[0].detSeq = 0; lastSent = ''; inHist = []; moveEv = []; lastSnapQ = -1; lastSnapAt = performance.now(); view = null; enterGame(); sendGuestInput(); }
   else if (d.t === 's') {
     if (d.ev) playEvents(d.ev);
     if (typeof d.q === 'number') { if (d.q <= lastSnapQ) return; lastSnapQ = d.q; } // an older snapshot arrived late: skip it
