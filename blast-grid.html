@@ -311,11 +311,11 @@ let netSeq = 0, lastSnapQ = -1, lastSnapAt = 0, inSeq = 0, myPing = 0, myRelay =
 const CONN_OPTS = { reliable: false, serialization: 'json' };
 // How two browsers find a path to each other. STUN tells each one its public address for a direct link; TURN relays
 // the game when no direct link is possible (Wi-Fi that blocks device-to-device traffic, strict firewalls).
-// PeerJS's built-in TURN servers no longer exist, so we bring our own. Leave username empty to run without a relay.
+// PeerJS's built-in TURN servers no longer exist, so we bring our own.
 const TURN = {
   urls: ['turn:global.relay.metered.ca:80', 'turn:global.relay.metered.ca:80?transport=tcp',
     'turn:global.relay.metered.ca:443', 'turns:global.relay.metered.ca:443?transport=tcp'],
-  username: '', credential: '',
+  username: 'bb263fbd3886c1a31405d32f', credential: '17HF03QMBY1rCaiS', // Metered free plan; anyone can read these
 };
 const PEER_OPTS = { config: { iceServers: [
   { urls: ['stun:stun.l.google.com:19302', 'stun:stun.cloudflare.com:3478'] },
