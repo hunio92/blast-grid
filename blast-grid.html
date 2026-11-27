@@ -380,7 +380,7 @@ let SET = (() => {
 function saveSet() { try { localStorage.setItem('bg-set', JSON.stringify(SET)); } catch (e) { } }
 function roundTimeFor(set) { return TIME_OPTS[set.time] || SIZES[set.size].time; }
 function puTableFor(off) { return PU_TABLE.filter(([t]) => !off.includes(t)); }
-const MAX_RANGE = 8, REMOTE_FUSE = 8, VEST_TIME = 8, HIT_INV = 1.5, CURSE_TIME = 10, INVIS_TIME = 8, MINE_ARM = 1.0;
+const MAX_RANGE = 8, REMOTE_FUSE = 8, VEST_TIME = 8, HIT_INV = 1.5, CURSE_TIME = 10, INVIS_TIME = 8, MINE_ARM = 1.0, MINE_MARK = 2;
 const SOFT_TIME = 5;
 const PORTAL_COLORS = ['#c084fc', '#2dd4bf', '#fb923c'];
 const DIRV = { l: [-1, 0], r: [1, 0], u: [0, -1], d: [0, 1] };
@@ -415,7 +415,7 @@ function newRound() {
     }
   }
   S = {
-    grid, hidden, pu: new Map(), bombs: [], flames: new Map(), fx: [], portals, portalAt: new Map(portals.flatMap(([a, b]) => [[a, b], [b, a]])),
+    grid, hidden, pu: new Map(), bombs: [], flames: new Map(), fx: [], mk: [], portals, portalAt: new Map(portals.flatMap(([a, b]) => [[a, b], [b, a]])),
     players: M.players.map((pl, i) => makePlayer(i, pl.connected !== false)),
     phase: 'count', t: 3, time: roundTime, spiral: buildSpiral(), sdT: 0, banner: '', bots: {},
   };
@@ -435,7 +435,7 @@ function makePlayer(i, alive) {
     slot: i, x: sp[0], y: sp[1], alive, dir: 'd', walk: 0,
     maxBombs: 1, range: 2, speed: 0, kick: false, ghost: false, tele: 0, bombsOut: 0, deathT: 9,
     remote: false, pierce: false, softT: 0, line: false, power: 0, hp: 1, inv: 0, curse: '', curseT: 0, autoT: 0,
-    glove: false, star: false, mines: 0, invis: 0, portalLock: -1,
+    glove: false, star: false, mines: 0, invis: 0, portalLock: -1, mineBy: -1,
     lastSeq: (inputs[i] && inputs[i].bombSeq) || 0, lastTele: (inputs[i] && inputs[i].teleSeq) || 0, lastDet: (inputs[i] && inputs[i].detSeq) || 0,
   };
 }
@@ -629,24 +629,28 @@ function detonate(p) {
   if (any) ev('det');
 }
 
-function hurt(p, by = -1) {
+// mineBy: slot whose mine started the blast this flame belongs to (-1 = none); the death is then shown as a mine death
+function hurt(p, by = -1, mineBy = -1) {
   if (!p.alive || p.inv > 0) return;
   if (p.hp > 1) { p.hp--; p.inv = HIT_INV; ev('hurt'); return; }
-  kill(p, by);
+  kill(p, by, mineBy);
 }
 
-function addFlame(x, y, k, o = -1) {
+function addFlame(x, y, k, o = -1, mineBy = -1) {
   const i = idx(x, y); let f = S.flames.get(i);
-  if (f) { f.t = FLAME_T; f.o = o; if (f.k !== k && f.k !== 'x') f.k = k === 'x' ? 'x' : 'c'; }
-  else { f = { t: FLAME_T, k, o }; S.flames.set(i, f); }
+  if (f) { f.t = FLAME_T; f.o = o; f.m = mineBy; if (f.k !== k && f.k !== 'x') f.k = k === 'x' ? 'x' : 'c'; }
+  else { f = { t: FLAME_T, k, o, m: mineBy }; S.flames.set(i, f); }
   return f;
 }
 
-function explode(b) {
+// via: slot whose mine set this bomb off (directly or down a chain), -1 = none
+function explode(b, via = -1) {
   if (b.dead) return;
   b.dead = true;
   const o = S.players[b.owner]; if (o && !b.mine) o.bombsOut = Math.max(0, o.bombsOut - 1);
-  addFlame(b.x, b.y, 'c', b.owner); ev('boom');
+  const mine = b.mine ? b.owner : via;
+  addFlame(b.x, b.y, 'c', b.owner, mine); ev('boom');
+  if (b.mine) S.mk.push({ x: b.x, y: b.y, t: MINE_MARK, o: b.owner }); // an exploded mine is shown to everyone for a moment
   const dirs = b.star ? [[1,0],[-1,0],[0,1],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]] : [[1,0],[-1,0],[0,1],[0,-1]];
   for (const [dx, dy] of dirs) {
     const diag = dx !== 0 && dy !== 0, fk = diag ? 'o' : dx ? 'h' : 'v';
@@ -659,24 +663,29 @@ function explode(b) {
       }
       if (c === '+') {
         S.grid[i] = '.'; stat(b.owner, 'crates');
-        const f = addFlame(x, y, 'x', b.owner); const h = S.hidden.get(i);
+        const f = addFlame(x, y, 'x', b.owner, mine); const h = S.hidden.get(i);
         if (h) { f.reveal = h; S.hidden.delete(i); }
         if (b.pierce) continue; // Pierce Bomb: keep burning past soft blocks
         break;
       }
       const ob = S.bombs.find(q => !q.dead && q.x === x && q.y === y);
-      if (ob) { explode(ob); break; }
-      if (S.pu.has(i)) { S.pu.delete(i); addFlame(x, y, fk, b.owner); break; }
-      addFlame(x, y, fk, b.owner);
+      if (ob) { explode(ob, mine); break; }
+      if (S.pu.has(i)) { S.pu.delete(i); addFlame(x, y, fk, b.owner, mine); break; }
+      addFlame(x, y, fk, b.owner, mine);
     }
   }
-  for (const q of S.bombs) if (!q.dead && !q.fly && q.x === b.x && q.y === b.y) explode(q); // e.g. a bomb resting on a mine
+  for (const q of S.bombs) if (!q.dead && !q.fly && q.x === b.x && q.y === b.y) explode(q, mine); // e.g. a bomb resting on a mine
 }
 
 // by: slot whose bomb did it, -1 = the arena (sudden death), null = left the game (not counted)
-function kill(p, by = -1) {
+function kill(p, by = -1, mineBy = -1) {
   if (!p.alive) return; p.alive = false; p.deathT = 0; ev('die');
   if (by === null) return;
+  if (mineBy >= 0) {
+    p.mineBy = mineBy;
+    const who = M.players[p.slot] ? M.players[p.slot].name : 'P' + (p.slot + 1), owner = M.players[mineBy] ? M.players[mineBy].name : 'P' + (mineBy + 1);
+    chatSys(mineBy === p.slot ? who + ' was blown up by their own mine 🧨' : who + ' was blown up by ' + owner + "'s mine 🧨");
+  }
   stat(p.slot, 'deaths');
   if (by === p.slot) stat(p.slot, 'selfK'); else if (by >= 0) stat(by, 'kills');
 }
@@ -765,12 +774,14 @@ function tick(dt) {
   S.bombs = S.bombs.filter(b => !b.dead);
   for (const f of S.fx) f.t -= dt;
   S.fx = S.fx.filter(f => f.t > 0);
+  for (const m of S.mk) m.t -= dt;
+  S.mk = S.mk.filter(m => m.t > 0);
   for (const [i, f] of S.flames) { f.t -= dt; if (f.t <= 0) { S.flames.delete(i); if (f.reveal) S.pu.set(i, f.reveal); } }
   for (const p of S.players) {
     if (!p.alive) continue;
     usePortal(p);
     const i = idx(Math.round(p.x), Math.round(p.y));
-    if (S.flames.has(i)) { hurt(p, S.flames.get(i).o); if (!p.alive) continue; }
+    if (S.flames.has(i)) { const f = S.flames.get(i); hurt(p, f.o, f.m); if (!p.alive) continue; }
     const t = S.pu.get(i);
     if (t) {
       S.pu.delete(i); ev(t === 'x' ? 'curse' : 'pick'); stat(p.slot, 'items');
@@ -814,6 +825,7 @@ function snapshot() {
       return [+x.toFixed(3), +y.toFixed(3), +Math.min(b.fuse, 99).toFixed(2), fl, Math.round(z), b.owner];
     }),
     fx: S.fx.map(f => [f.x, f.y, +f.t.toFixed(2), f.c]),
+    mk: S.mk.map(m => [m.x, m.y, +m.t.toFixed(2), m.o]), mb: S.players.map(p => p.alive ? -1 : p.mineBy),
     f: [...S.flames].map(([i, f]) => [i, f.k, +f.t.toFixed(2)]),
     p: S.players.map(p => [+p.x.toFixed(3), +p.y.toFixed(3), p.alive ? 1 : 0, p.dir, +p.walk.toFixed(2), +Math.min(p.deathT, 9).toFixed(2), p.maxBombs, p.range, p.speed, p.kick ? 1 : 0, p.ghost ? 1 : 0, p.tele,
       (p.remote ? 1 : 0) | (p.pierce ? 2 : 0) | (p.softT > 0 ? 4 : 0) | (p.line ? 8 : 0), p.power, p.hp, +p.inv.toFixed(2), p.curse, Math.ceil(p.curseT),
@@ -1563,6 +1575,19 @@ function drawMine(x, y, armed) {
   ctx.globalAlpha = 1;
   ctx.fillStyle = armed && Math.sin(clock * 8) > 0 ? '#ef4444' : '#7f1d1d'; ctx.beginPath(); ctx.arc(cx, cy + 3, 2.5, 0, 7); ctx.fill();
 }
+// a mine that just went off: shown to everyone (red ring, the mine, a MINE label) for MINE_MARK seconds
+function drawMineMark(x, y, t) {
+  const cx = x * T + T / 2, cy = y * T + T / 2, k = 1 - t / MINE_MARK;
+  ctx.globalAlpha = Math.min(1, t / 0.5);
+  ctx.strokeStyle = '#ef4444'; ctx.lineWidth = 3; ctx.beginPath(); ctx.arc(cx, cy, 14 + 4 * Math.sin(clock * 10), 0, 7); ctx.stroke();
+  ctx.fillStyle = '#374151'; ctx.beginPath(); ctx.ellipse(cx, cy + 4, 11, 5, 0, 0, 7); ctx.fill();
+  ctx.fillStyle = '#ef4444'; ctx.beginPath(); ctx.arc(cx, cy + 3, 3, 0, 7); ctx.fill();
+  ctx.font = '8px "Press Start 2P", monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  const ty = cy - 20 - k * 6;
+  ctx.fillStyle = '#000'; ctx.fillText('MINE', cx + 1, ty + 1);
+  ctx.fillStyle = '#fca5a5'; ctx.fillText('MINE', cx, ty);
+  ctx.globalAlpha = 1;
+}
 function drawBomb(x, y, fuse, flags = 0, z = 0) {
   if (z) { // thrown: shadow on the ground, bomb in the air
     const gx = x * T + T / 2, gy = y * T + T / 2;
@@ -1666,6 +1691,7 @@ function render(v, dt) {
     if (fl & 8) { if (onThisScreen(own)) drawMine(x, y, true); continue; } // mines are hidden from opponents
     drawBomb(x, y, f, fl, z || 0);
   }
+  for (const [x, y, t] of (v.mk || [])) drawMineMark(x, y, t);
   for (const [x, y, t, c] of (v.fx || [])) {
     const k = 1 - t / 0.5, cx = x * T + T / 2, cy = y * T + T / 2;
     ctx.globalAlpha = Math.max(0, t / 0.5);
@@ -1701,6 +1727,8 @@ function render(v, dt) {
   else if (mode === 'guest' && joinedLate && v.ph !== 'match') banner('YOU JOINED', 'You\'ll play from the next round — watch for now', '#38bdf8');
   else if (v.ph === 'match') drawBoard(v, v.ban, mode === 'guest' ? 'Waiting for the host to start a rematch…' : document.body.classList.contains('touch') ? 'Tap REMATCH to play again' : 'Press R for a rematch');
   if ((v.ph === 'play' || v.ph === 'grace') && v.tm <= 0 && v.tm > -2) banner('SUDDEN DEATH!', null, '#fb7185');
+  else if (mode !== 'local' && (v.ph === 'play' || v.ph === 'grace') && v.mb && v.mb[mySlot] >= 0 && v.p[mySlot] && !v.p[mySlot][2] && v.p[mySlot][5] < 3) // killed by a (hidden) mine: say so
+    banner('MINE!', v.mb[mySlot] === mySlot ? 'Your own mine got you' : (v.names[v.mb[mySlot]] || 'Someone') + '\'s mine got you', '#fb7185');
   if (boardHeld && v.ph !== 'round' && v.ph !== 'match') drawBoard(v, 'SCOREBOARD', document.body.classList.contains('touch') ? 'Let go of SCORES to play' : 'Release TAB to play');
   if (v.ph === 'match') recordMatch(v);
   updateHUD(v); updateTouchBar(v);
